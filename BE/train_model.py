@@ -44,11 +44,11 @@ class Config:
     SEED = 42          # Locks the random seed to guarantee consistent training outcomes across runs.
     
     # --- Core Training Hyperparameters ---
-    EPOCHS = 200       # Total number of training epochs
-    BATCH_SIZE = 8     # Batch size: the model studies 8 images at a time before updating the "brain" (Adjust based on my VRAM, 8 is good for 6GB VRAM)
-    IMG_SIZE = 640     # Input image resolution
-    PATIENCE = 15      # Early stopping patience (epochs without improvement)
-    SAVE_PERIOD = 5    # Save heavy checkpoints every 5 epochs
+    EPOCHS = 200            # Total number of training epochs
+    BATCH_SIZE = 8          # Batch size: the model studies 8 images at a time before updating the "brain" (Adjust based on my VRAM, 8 is good for 6GB VRAM)
+    IMG_SIZE = 640          # Input image resolution
+    PATIENCE = 15           # Early stopping patience (epochs without improvement)
+    SAVE_PERIOD = 5         # Save heavy checkpoints every 5 epochs
     OPTIMIZER = 'AdamW'     #Adaptive Moment Estimation Weight decay: Modern optimizer that balances fast learning with good generalization. The best for this useCase
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
@@ -82,7 +82,7 @@ class Config:
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
         'mosaic': 1.0,      # Mosaic (Probability)
-        'mixup': 0.3,      # Mixup (Probability) - Helps with player overlap
+        'mixup': 0.3,       # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.1,  # Segment copy-paste (Probability)
         'erasing': 0.6,     # Random erasing (Probability) - Simulates occlusion
         'auto_augment': 'randaugment', # Use RandAugment policy
@@ -272,7 +272,7 @@ class TrainingSession:
         # Merging core config (what YOLO expects) with augmentation settings
         train_args = {
             'data': yaml_path,
-            'project': str(Path(Config.PROJECT_NAME).absolute()),
+            'project': Config.PROJECT_NAME,
             'name': Config.RUN_NAME,
             'epochs': Config.EPOCHS,
             'batch': Config.BATCH_SIZE,

@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-04-20T13:30:40.726112",
+  "model": "basketball_training/yolo11s_5classes/weights/best.pt",
+  "summary": "Training completed in 5.3 hours (18 epochs).\nBest performance achieved at epoch 18.\n\nKey Metrics:\n- mAP@50: 0.7318 (mean average precision at 50% IoU)\n- mAP@50-95: 0.3646 (mAP across all IoU thresholds)\n- Precision: 0.7629 (accuracy of positive predictions)\n- Recall: 0.6667 (completeness of detections)\n\nFinal Loss: 1.6635",
+  "strengths": [
+    "\u2705 Good precision: mAP@50-95 = 0.3646",
+    "\u2705 High precision: 0.7629 - low false positive rate"
+  ],
+  "weaknesses": [
+    "No major weaknesses detected"
+  ],
+  "recommendations": [
+    "\ud83d\udcc8 Increase training epochs for better convergence",
+    "\ud83d\udd04 Apply stronger data augmentation (rotation, brightness)",
+    "\ud83d\udcca Ensure dataset quality - check for mislabeled images"
+  ]
+}

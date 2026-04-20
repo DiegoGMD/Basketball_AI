@@ -23,8 +23,8 @@ class MetricsConfig:
     RUN_NAME = "yolo11s_5classes"
     MODEL_PATH = Path(f"{PROJECT_NAME}/{RUN_NAME}/weights/best.pt")
     RESULTS_CSV = Path(f"{PROJECT_NAME}/{RUN_NAME}/results.csv")
-    DATASET_DIR = Path("basketball-detection-srfkd")
-    DATA_YAML = DATASET_DIR / "data.yaml"
+    DATASET_DIR = Path("basketball-detection-srfkd-1")
+    DATA_YAML = DATASET_DIR / "data_basketball.yaml"
     OUTPUT_DIR = Path("metrics_reports")
     
 # Create output directory
