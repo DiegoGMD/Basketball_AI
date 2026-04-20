@@ -47,7 +47,7 @@ class Config:
     EPOCHS = 200       # Total number of training epochs
     BATCH_SIZE = 8     # Batch size: the model studies 8 images at a time before updating the "brain" (Adjust based on my VRAM, 8 is good for 6GB VRAM)
     IMG_SIZE = 640     # Input image resolution
-    PATIENCE = 30      # Early stopping patience (epochs without improvement)
+    PATIENCE = 15      # Early stopping patience (epochs without improvement)
     SAVE_PERIOD = 5    # Save heavy checkpoints every 5 epochs
     OPTIMIZER = 'AdamW'     #Adaptive Moment Estimation Weight decay: Modern optimizer that balances fast learning with good generalization. The best for this useCase
     
@@ -70,21 +70,21 @@ class Config:
     AUGMENTATION = {
         #color and light
         'hsv_h': 0.015,     # HSV-Hue adjustment
-        'hsv_s': 0.7,       # HSV-Saturation adjustment
+        'hsv_s': 0.9,       # HSV-Saturation adjustment
         'hsv_v': 0.4,       # HSV-Value adjustment
         #geometry and position
-        'degrees': 10.0,    # Rotation (+/- deg)
+        'degrees': 15.0,    # Rotation (+/- deg)
         'translate': 0.1,   # Translation (+/- fraction)
-        'scale': 0.6,       # Scale gain (+/- gain)
+        'scale': 0.8,       # Scale gain (+/- gain)
         'shear': 2.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
         'mosaic': 1.0,      # Mosaic (Probability)
-        'mixup': 0.15,      # Mixup (Probability) - Helps with player overlap
+        'mixup': 0.3,      # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.1,  # Segment copy-paste (Probability)
-        'erasing': 0.4,     # Random erasing (Probability) - Simulates occlusion
+        'erasing': 0.6,     # Random erasing (Probability) - Simulates occlusion
         'auto_augment': 'randaugment', # Use RandAugment policy
     }
 
@@ -272,7 +272,7 @@ class TrainingSession:
         # Merging core config (what YOLO expects) with augmentation settings
         train_args = {
             'data': yaml_path,
-            'project': Config.PROJECT_NAME,
+            'project': str(Path(Config.PROJECT_NAME).absolute()),
             'name': Config.RUN_NAME,
             'epochs': Config.EPOCHS,
             'batch': Config.BATCH_SIZE,
@@ -308,7 +308,7 @@ class TrainingSession:
             'resume': self.resume_training,
             'val': True,
             'plots': True,
-            'multi_scale': True # Helps detection at different distances
+            'multi_scale': False # Helps detection at different distances
         }
         
         # 6. Start Training
