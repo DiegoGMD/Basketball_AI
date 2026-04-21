@@ -208,20 +208,61 @@ class TrainingAnalyzer:
         ax.legend()
         ax.grid(True, alpha=0.3)
 
-        # ── Panel 2: Overfitting Score ───────────────────────────────────────
+        # ── Panel 2: Overfitting & Underfitting Progression ─────────────────
+        # Overfitting score (positive): how much val loss exceeds train loss, as %.
+        # Underfitting score (negative): how far val loss still is from its minimum,
+        #   expressed as a percentage of the total val-loss drop across training.
+        #   High early on → model hasn't learned yet; fades as training progresses.
         ax = axes[1]
         overfit_score = (gap / np.where(train_loss > 0, train_loss, 1) * 100).clip(0, 100)
-        colors = ['green' if x < 10 else 'orange' if x < 20 else 'red'
-                  for x in overfit_score]
-        ax.bar(epochs, overfit_score, color=colors, alpha=0.7)
-        ax.axhline(y=10, color='g',      linestyle='--', label='Good (<10%)',     alpha=0.7)
-        ax.axhline(y=20, color='orange', linestyle='--', label='Moderate (<20%)', alpha=0.7)
-        ax.axhline(y=30, color='red',    linestyle='--', label='Overfit (≥30%)',  alpha=0.7)
+        val_drop_range = val_loss.max() - val_loss.min() + 1e-9
+        underfit_score = ((val_loss - val_loss.min()) / val_drop_range * 100).clip(0, 100)
+
+        # Colour each bar by dominant condition
+        bar_colors_over  = []
+        bar_colors_under = []
+        for o, u in zip(overfit_score, underfit_score):
+            # Overfitting bar colour
+            bar_colors_over.append(
+                'red' if o >= 30 else 'orange' if o >= 20 else '#ffcccc'
+            )
+            # Underfitting bar colour (drawn below zero)
+            bar_colors_under.append(
+                'royalblue' if u >= 60 else 'steelblue' if u >= 30 else '#cce0ff'
+            )
+
+        ax.bar(epochs,  overfit_score,  color=bar_colors_over,  alpha=0.8,
+               label='Overfitting score ↑')
+        ax.bar(epochs, -underfit_score, color=bar_colors_under, alpha=0.8,
+               label='Underfitting score ↓')
+
+        # Reference lines — positive side (overfitting thresholds)
+        ax.axhline(y= 10, color='#228B22', linestyle='--', linewidth=1.2,
+                   label='Overfit warn (+10%)', alpha=0.8)
+        ax.axhline(y= 30, color='red',     linestyle='--', linewidth=1.2,
+                   label='Overfit crit (+30%)', alpha=0.8)
+        # Reference lines — negative side (underfitting thresholds)
+        ax.axhline(y=-30, color='steelblue',  linestyle='--', linewidth=1.2,
+                   label='Underfit mod (−30%)', alpha=0.8)
+        ax.axhline(y=-60, color='royalblue',  linestyle='--', linewidth=1.2,
+                   label='Underfit high (−60%)', alpha=0.8)
+        # Zero line
+        ax.axhline(y=0, color='black', linewidth=0.8, alpha=0.5)
+
+        # Shade the "good zone" between the two warn lines
+        ax.axhspan(-30, 10, color='green', alpha=0.05, label='Good-fit zone')
+
         ax.set_xlabel('Epoch')
-        ax.set_ylabel('Overfitting Score (%)')
-        ax.set_title('Overfitting Progression')
-        ax.legend(fontsize=8)
+        ax.set_ylabel('Score (%)')
+        ax.set_title('Overfitting & Underfitting Progression')
+        ax.legend(fontsize=7, loc='upper right')
         ax.grid(True, alpha=0.3, axis='y')
+
+        # Annotate axes sides for clarity
+        ax.text(0.01, 0.97, '▲ Overfitting', transform=ax.transAxes,
+                fontsize=8, color='red', va='top')
+        ax.text(0.01, 0.03, '▼ Underfitting', transform=ax.transAxes,
+                fontsize=8, color='royalblue', va='bottom')
 
         # ── Panel 3: Fit-Quality Timeline ────────────────────────────────────
         # Zone classification per epoch:

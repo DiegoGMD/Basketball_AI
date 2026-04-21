@@ -70,21 +70,21 @@ class Config:
     AUGMENTATION = {
         #color and light
         'hsv_h': 0.015,     # HSV-Hue adjustment
-        'hsv_s': 0.9,       # HSV-Saturation adjustment
+        'hsv_s': 0.7,       # HSV-Saturation adjustment
         'hsv_v': 0.4,       # HSV-Value adjustment
         #geometry and position
-        'degrees': 15.0,    # Rotation (+/- deg)
+        'degrees': 10.0,    # Rotation (+/- deg)
         'translate': 0.1,   # Translation (+/- fraction)
-        'scale': 0.8,       # Scale gain (+/- gain)
+        'scale': 0.6,       # Scale gain (+/- gain)
         'shear': 2.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
         'mosaic': 1.0,      # Mosaic (Probability)
-        'mixup': 0.3,       # Mixup (Probability) - Helps with player overlap
+        'mixup': 0.15,       # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.1,  # Segment copy-paste (Probability)
-        'erasing': 0.6,     # Random erasing (Probability) - Simulates occlusion
+        'erasing': 0.4,     # Random erasing (Probability) - Simulates occlusion
         'auto_augment': 'randaugment', # Use RandAugment policy
     }
 

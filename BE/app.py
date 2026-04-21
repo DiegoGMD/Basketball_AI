@@ -9,7 +9,7 @@ import shutil
 import uuid
 import uvicorn
 import threading
-from collections import deque
+from collections import deque, defaultdict
 from enum import Enum
 import time
 import json  # Added to parse custom thresholds
@@ -21,6 +21,7 @@ class Config:
     UPLOAD_DIR = Path("uploads")
     PROCESSED_DIR = Path("processed")
     MODEL_PATH = Path("basketball_training/yolo11s_5classes/weights/best.pt")
+    TRACKER_PATH = Path("tracker/bytetrack.yaml")
 
     # Video Constraints
     MAX_DURATION_SECONDS = 180  # Max processing limit (3 mins)
@@ -37,11 +38,11 @@ class Config:
 
     # Confidence Thresholds
     THRESHOLDS = {
-        0: 0.6,     # Ball
+        0: 0.3,     # Ball
         1: 0.25,    # Ball in Basket
-        2: 0.7,     # Player
-        3: 0.7,     # Basket
-        4: 0.77     # Player Shooting
+        2: 0.5,     # Player
+        3: 0.6,     # Basket
+        4: 0.4     # Player Shooting
     }
 
     # Colors (BGR Format for OpenCV)
@@ -295,6 +296,8 @@ class VideoProcessor:
         self.mode = mode
         # Use custom thresholds if provided, otherwise use defaults
         self.thresholds = thresholds if thresholds else Config.THRESHOLDS
+        # Track history for motion trails (tracking_test.py integration)
+        self.track_history = defaultdict(lambda: [])
         
     def run(self):
         try:
@@ -316,9 +319,16 @@ class VideoProcessor:
             # prepare the "scoreboard" by resetting it
             stats = GameStats(fps)
             frame_idx = 0
+            self.track_history = defaultdict(lambda: [])  # Reset trails each run
             
             self._update_status("processing", 0, max_frames, stats)
             print(f"🎬 Processing {self.file_id} | Mode: {self.mode.value} | Frames: {max_frames}")
+
+            print("🔄 Loading Tracker...")
+            if not Config.TRACKER_PATH.exists():
+                raise FileNotFoundError(f"❌ Tracker not found at {Config.MODEL_PATH}")
+            else:
+                print("✅ Tracker loaded successfully!")
 
             # read frame by frame using a while loop
             while cap.isOpened() and frame_idx < max_frames:
@@ -336,11 +346,12 @@ class VideoProcessor:
                 
                 # --- TRACKING --- (the model analyzes the original frame, but modifies the copy )
                 # detection using the model
+
                 results = yolo_model.track(
                     frame, persist=True, verbose=False, 
-                    conf=0.25, tracker="bytetrack.yaml", imgsz=640
+                    conf=0.25, tracker=Config.TRACKER_PATH, imgsz=640
                 )
-                
+
                 # --- LOGIC --- 
                 # Update scores if it finds shots or baskets. 
                 self._process_detections(results, stats, frame_idx)
@@ -350,6 +361,7 @@ class VideoProcessor:
                 # 1. Boxes (Only in FULL_TRACKING)
                 if self.mode == ProcessingMode.FULL_TRACKING:
                     self._draw_yolo_boxes(annotated, results)
+                    self._draw_tracking_trails(annotated, results)  # Motion trails
                 
                 # 2. Effects (In FULL_TRACKING or STATS_EFFECTS)
                 if self.mode in [ProcessingMode.FULL_TRACKING, ProcessingMode.STATS_EFFECTS]:
@@ -389,6 +401,20 @@ class VideoProcessor:
     def _process_detections(self, results, stats, frame_idx):
         # If the model didn't see anything in this frame (black or blank screen), exit immediately to save time.
         if not results[0].boxes: return
+        
+        # --- DETECTION PRINT (every 30 frames to avoid flooding the console) ---
+        if frame_idx % 30 == 0:
+            detected_classes = set()
+            for box in results[0].boxes:
+                cls = int(box.cls[0])
+                conf = float(box.conf[0])
+                if conf >= self.thresholds.get(cls, 0.3):
+                    detected_classes.add(Config.CLASSES.get(cls, f"Class {cls}"))
+            if detected_classes:
+                print(f"[Frame {frame_idx}] 🔍 Detected: {', '.join(sorted(detected_classes))}")
+            else:
+                print(f"[Frame {frame_idx}] 🔍 Detected: (nothing above threshold)")
+
         # Scroll through the list of all found objects
         for box in results[0].boxes:
             cls = int(box.cls[0])
@@ -424,6 +450,32 @@ class VideoProcessor:
             
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    # Draw motion trail polylines for each tracked object (from tracking_test.py)
+    def _draw_tracking_trails(self, frame, results):
+        boxes_data = results[0].boxes
+        if not boxes_data or not boxes_data.is_track:
+            return
+
+        boxes = boxes_data.xywh.cpu()
+        track_ids = boxes_data.id.int().cpu().tolist()
+        classes = boxes_data.cls.int().cpu().tolist()
+        confs = boxes_data.conf.cpu().tolist()
+
+        for box, track_id, cls, conf in zip(boxes, track_ids, classes, confs):
+            if conf < self.thresholds.get(cls, 0.3):
+                continue
+
+            x, y, w, h = box
+            track = self.track_history[track_id]
+            track.append((float(x), float(y)))  # x, y center point
+            if len(track) > 30:  # retain 30 frames of history
+                track.pop(0)
+
+            if len(track) >= 2:
+                color = Config.COLORS.get(cls, (230, 230, 230))
+                points = np.hstack(track).astype(np.int32).reshape((-1, 1, 2))
+                cv2.polylines(frame, [points], isClosed=False, color=color, thickness=3)
 
     # Used to update the status and the progress bar.
     def _update_status(self, status, current, total, stats):
