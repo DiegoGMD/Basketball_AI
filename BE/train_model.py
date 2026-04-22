@@ -67,6 +67,7 @@ class Config:
     
     # --- Data Augmentation (Optimized for Sports/Motion) ---
     # Heavy augmentation helps YOLO generalize on limited datasets
+    # TODO: Add blur so detects the ball in motion
     AUGMENTATION = {
         #color and light
         'hsv_h': 0.015,     # HSV-Hue adjustment

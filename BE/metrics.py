@@ -210,8 +210,8 @@ class TrainingAnalyzer:
 
         # ── Panel 2: Overfitting Score ───────────────────────────────────────
         ax = axes[1]
-        overfit_score = (gap / np.where(train_loss > 0, train_loss, 1) * 100).clip(0, 100)
-        colors = ['green' if x < 10 else 'orange' if x < 20 else 'red'
+        overfit_score = (gap / np.where(train_loss > 0, train_loss, 1) * 100).clip(-100, 100)
+        colors = ['green' if abs(x) < 10 else 'orange' if abs(x) < 20 else 'red'
                   for x in overfit_score]
         ax.bar(epochs, overfit_score, color=colors, alpha=0.7)
         ax.axhline(y=10, color='g',      linestyle='--', label='Good (<10%)',     alpha=0.7)
@@ -219,7 +219,7 @@ class TrainingAnalyzer:
         ax.axhline(y=30, color='red',    linestyle='--', label='Overfit (≥30%)',  alpha=0.7)
         ax.set_xlabel('Epoch')
         ax.set_ylabel('Overfitting Score (%)')
-        ax.set_title('Overfitting Progression')
+        ax.set_title('Overfitting & Underfitting Progression')
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3, axis='y')
 

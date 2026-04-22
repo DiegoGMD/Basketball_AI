@@ -20,7 +20,7 @@ class Config:
     # Paths
     UPLOAD_DIR = Path("uploads")
     PROCESSED_DIR = Path("processed")
-    MODEL_PATH = Path("basketball_training/yolo11s_5classes/weights/best.pt")
+    MODEL_PATH = Path("basketball_training/yolo11s_5classes/weights/epoch50.pt")
     TRACKER_PATH = Path("tracker/bytetrack.yaml")
     MINIMAP_PATH = Path("tracker/minimap.png")
     HOMOGRAPHY_PATH = Path("tracker/homography.npy")
@@ -203,6 +203,10 @@ class GameStats:
                 self.last_shot_frame = frame_idx
                 print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
 
+            if (self.shots_attempted < self.baskets_made):
+                self.shots_attempted = self.baskets_made    
+                print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
+            
             self.baskets_made += 1
             self.last_basket_frame = frame_idx
             self.basket_position = position
@@ -216,7 +220,7 @@ class GameStats:
     #calculate the shoot percentage (%)
     @property
     def accuracy(self):
-        if self.shots_attempted == 0: return 0.0
+        if self.shots_attempted == 0: return 0.0 
         return (self.baskets_made / self.shots_attempted) * 100
 
     def get_animation_progress(self, current_frame):
@@ -370,10 +374,10 @@ class MinimapRenderer:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 80, 255), 1)
             return mm
 
-        boxes    = boxes_data.xyxy.cpu().numpy()     # x1,y1,x2,y2
+        boxes = boxes_data.xyxy.cpu().numpy()     # x1,y1,x2,y2
         track_ids = boxes_data.id.int().cpu().tolist() if boxes_data.id is not None else []
-        classes  = boxes_data.cls.int().cpu().tolist()
-        confs    = boxes_data.conf.cpu().tolist()
+        classes = boxes_data.cls.int().cpu().tolist()
+        confs = boxes_data.conf.cpu().tolist()
 
         for i, (box, cls, conf) in enumerate(zip(boxes, classes, confs)):
             if conf < thresholds.get(cls, 0.3):
@@ -636,14 +640,17 @@ class VideoProcessor:
                 stats.register_basket(frame_idx, target_pos)
 
     # Used to show the human what the model sees. Draw the colored rectangles.
+    # TODO: Add track id to the player
     def _draw_yolo_boxes(self, frame, results):
         if not results[0].boxes: return
         for box in results[0].boxes:
+            # track_ids = box.id.int().cpu().tolist() if box.id is not None else []
+            # tid = track_ids[i] if cls in (2, 4) and i < len(track_ids) else None
+
             cls = int(box.cls[0])
             conf = float(box.conf[0])
             # Use instance-specific thresholds
             if conf < self.thresholds.get(cls, 0.3): continue
-
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             color = Config.COLORS.get(cls, (255,255,255))
             label = f"{Config.CLASSES.get(cls)} {conf:.2f}"
