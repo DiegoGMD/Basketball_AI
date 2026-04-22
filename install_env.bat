@@ -156,7 +156,8 @@ pip install ^
     "seaborn>=0.13.0" ^
     roboflow==1.1.47 ^
     PyYAML==6.0.2 ^
-    python-dotenv==1.0.0
+    python-dotenv==1.0.0^
+    lapx==0.5.5
 
 if errorlevel 1 (
     echo [ERROR] Fallo la instalacion de dependencias.

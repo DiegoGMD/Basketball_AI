@@ -22,6 +22,8 @@ class Config:
     PROCESSED_DIR = Path("processed")
     MODEL_PATH = Path("basketball_training/yolo11s_5classes/weights/best.pt")
     TRACKER_PATH = Path("tracker/bytetrack.yaml")
+    MINIMAP_PATH = Path("tracker/minimap.png")
+    HOMOGRAPHY_PATH = Path("tracker/homography.npy")
 
     # Video Constraints
     MAX_DURATION_SECONDS = 180  # Max processing limit (3 mins)
@@ -62,6 +64,9 @@ class Config:
         4: "Player Shooting"
     }
 
+    COURT_WIDTH_CM  = 1524
+    COURT_HEIGHT_CM = 1422
+
 # Ensure directories exist
 Config.UPLOAD_DIR.mkdir(exist_ok=True)
 Config.PROCESSED_DIR.mkdir(exist_ok=True)
@@ -75,6 +80,20 @@ class ProcessingMode(str, Enum):
 # ==================== GLOBAL STATE ====================
 processing_status = {}
 stop_flags = {}
+
+# ==================== HOMOGRAPHY ====================
+def load_homography():
+    """Loads the homography matrix saved by calibrate.py."""
+    path = Config.HOMOGRAPHY_PATH
+    if not path.exists():
+        print("⚠️  homography.npy not found — minimap dots will be disabled.")
+        print("   Run:  python calibrate.py --video uploads\\your_video.mp4")
+        return None
+    H = np.load(str(path))
+    print(f"✅ Homography loaded from {path}")
+    return H
+
+homography_matrix = load_homography()  # None if not calibrated yet
 
 # ==================== AI MODEL ====================
 def load_model():
@@ -182,7 +201,7 @@ class GameStats:
             if (frame_idx - self.last_shot_frame) > (self.shot_cooldown_frames * 2):
                 self.shots_attempted += 1
                 self.last_shot_frame = frame_idx
-                # print(f"   ⚠️  Basket detected without shot. Auto-added shot.")
+                print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
 
             self.baskets_made += 1
             self.last_basket_frame = frame_idx
@@ -285,6 +304,117 @@ class Visualizer:
             cv2.putText(canvas, val, (w//2 + 100, y_pos), font, 1.0, (0,255,100) if "%" in val else (255,255,255), 2)
             cv2.line(canvas, (w//2 - 200, y_pos + 20), (w//2 + 200, y_pos + 20), (50,50,50), 1)
         return canvas
+    
+# ==================== MINIMAP RENDERER ====================
+class MinimapRenderer:
+    """
+    Projects detected players and the ball onto the 2D court minimap
+    using the pre-computed homography matrix.
+    """
+
+    # Real-world court size (cm) — must match calibrate_new.py
+    COURT_W = Config.COURT_WIDTH_CM
+    COURT_H = Config.COURT_HEIGHT_CM
+
+    @staticmethod
+    def project_point(pixel_xy: tuple, H: np.ndarray) -> tuple | None:
+        """
+        Transforms a single image pixel (x, y) → real-world court (x_cm, y_cm)
+        using the homography matrix H.
+        Returns None if the point projects outside the court bounds.
+        """
+        pt = np.array([[[float(pixel_xy[0]), float(pixel_xy[1])]]], dtype=np.float32)
+        projected = cv2.perspectiveTransform(pt, H)
+        x_cm, y_cm = projected[0][0]
+
+        # Reject points that land far outside the court
+        if x_cm < -200 or x_cm > MinimapRenderer.COURT_W + 200:
+            return None
+        if y_cm < -200 or y_cm > MinimapRenderer.COURT_H + 200:
+            return None
+
+        return (x_cm, y_cm)
+
+    @staticmethod
+    def court_to_minimap(x_cm: float, y_cm: float, mm_w: int, mm_h: int) -> tuple:
+        """
+        Scales real-world court coordinates (cm) → minimap pixel coordinates.
+        Clamps to minimap bounds.
+        """
+        px = int(np.clip(x_cm / MinimapRenderer.COURT_W * mm_w, 0, mm_w - 1))
+        py = int(np.clip(y_cm / MinimapRenderer.COURT_H * mm_h, 0, mm_h - 1))
+        return (px, py)
+
+    @staticmethod
+    def draw(minimap_base: np.ndarray, results, H: np.ndarray,
+             thresholds: dict, mm_w: int, mm_h: int) -> np.ndarray:
+        """
+        Takes the static minimap image as base, draws live player/ball dots on top,
+        and returns the annotated minimap copy (does NOT modify the original).
+
+        - Players (cls 2) and Player Shooting (cls 4) → colored dots with track ID
+        - Ball (cls 0) → smaller orange dot
+        - Basket and Ball-in-Basket are not projected (not on the floor plane)
+        """
+        mm = minimap_base.copy()
+
+        boxes_data = results[0].boxes
+        if boxes_data is None or len(boxes_data) == 0:
+            return mm  # No tracking data yet, return blank minimap
+
+        if H is None:
+            # No homography: draw a warning on the minimap
+            cv2.putText(mm, "No homography.npy", (10, mm_h // 2 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 80, 255), 1)
+            cv2.putText(mm, "Run calibrate_new.py", (10, mm_h // 2 + 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 80, 255), 1)
+            return mm
+
+        boxes    = boxes_data.xyxy.cpu().numpy()     # x1,y1,x2,y2
+        track_ids = boxes_data.id.int().cpu().tolist() if boxes_data.id is not None else []
+        classes  = boxes_data.cls.int().cpu().tolist()
+        confs    = boxes_data.conf.cpu().tolist()
+
+        for i, (box, cls, conf) in enumerate(zip(boxes, classes, confs)):
+            if conf < thresholds.get(cls, 0.3):
+                continue
+
+            # Only project objects that are on the floor (players and ball)
+            # Skip cls 1 (ball in basket), 3 (basket) — they are elevated
+            if cls not in (0, 2, 4):
+                continue
+
+            x1, y1, x2, y2 = box
+
+            # Use foot position for players (bottom-center of bounding box)
+            # Use center for ball (it is often in the air, but this is an approximation)
+            if cls in (2, 4):
+                foot_x = (x1 + x2) / 2
+                foot_y = y2          # bottom of bounding box = feet on floor
+            else:
+                foot_x = (x1 + x2) / 2
+                foot_y = (y1 + y2) / 2
+
+            court_pos = MinimapRenderer.project_point((foot_x, foot_y), H)
+            if court_pos is None:
+                continue
+
+            mm_px = MinimapRenderer.court_to_minimap(court_pos[0], court_pos[1], mm_w, mm_h)
+
+            # Draw the dot
+            color     = Config.COLORS.get(cls, (200, 200, 200))
+            dot_size  = 6 if cls in (2, 4) else 4  # players bigger than ball
+
+            cv2.circle(mm, mm_px, dot_size + 2, (0, 0, 0), -1)    # black outline
+            cv2.circle(mm, mm_px, dot_size,     color,     -1)
+
+            # Label players with their track ID
+            if cls in (2, 4) and i < len(track_ids):
+                tid = track_ids[i]
+                cv2.putText(mm, str(tid), (mm_px[0] + 7, mm_px[1] + 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+
+        return mm
 
 class VideoProcessor:
     """Manages the video processing loop."""
@@ -315,7 +445,19 @@ class VideoProcessor:
             else: max_frames = min(total_frames, int(fps * Config.MAX_DURATION_SECONDS))
             
             # prepare a "blank cassette" where we'll record the edited video. It must have the same dimensions (width, height) and frame rate (fps) as the original.
-            writer = cv2.VideoWriter(str(self.output_path), cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+            FINAL_W = w + 480
+            FINAL_H = h
+            RIGHT_W = 480
+            STATS_H = FINAL_H // 2
+            MINIMAP_H = FINAL_H - STATS_H
+
+            writer = cv2.VideoWriter(
+                str(self.output_path),
+                cv2.VideoWriter_fourcc(*'mp4v'),
+                fps,
+                (FINAL_W, FINAL_H)
+            )
+                        
             # prepare the "scoreboard" by resetting it
             stats = GameStats(fps)
             frame_idx = 0
@@ -329,6 +471,16 @@ class VideoProcessor:
                 raise FileNotFoundError(f"❌ Tracker not found at {Config.MODEL_PATH}")
             else:
                 print("✅ Tracker loaded successfully!")
+
+            # prepare the minimap
+            minimap = cv2.imread(str(Config.MINIMAP_PATH))
+            if minimap is None:
+                raise FileNotFoundError("❌ minimap.png not found")
+
+            mm_w = RIGHT_W              # 480
+            mm_h = int(mm_w * 3 / 4)    # 360
+
+            minimap_resized = cv2.resize(minimap, (mm_w, mm_h))
 
             # read frame by frame using a while loop
             while cap.isOpened() and frame_idx < max_frames:
@@ -372,7 +524,49 @@ class VideoProcessor:
                 Visualizer.draw_hud(annotated, stats, w, h)
                 
                 # Writes the modified frame to the new video file.
-                writer.write(annotated)
+                # --- RIGHT PANEL ---
+                right_panel = np.zeros((FINAL_H, RIGHT_W, 3), dtype=np.uint8)
+                right_panel[:] = (25, 25, 25)  # dark background
+
+
+                # --- STATS PANEL (TOP) ---
+                stats_panel = np.zeros((STATS_H, RIGHT_W, 3), dtype=np.uint8)
+
+                cv2.putText(stats_panel, "STATS", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2)
+                cv2.putText(stats_panel, f"Shots: {stats.shots_attempted}", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+                cv2.putText(stats_panel, f"Baskets: {stats.baskets_made}", (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,100), 2)
+                cv2.putText(stats_panel, f"Accuracy: {stats.accuracy:.1f}%", (20, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
+
+                right_panel[0:STATS_H, :] = stats_panel
+
+                # --- MINIMAP (BOTTOM) — live dots projected via homography ---
+                live_minimap = MinimapRenderer.draw(
+                    minimap_resized,       # static base image (never modified)
+                    results,               # current frame detections with track IDs
+                    homography_matrix,     # loaded once at startup (None if not calibrated)
+                    self.thresholds,
+                    mm_w,
+                    mm_h
+                )
+
+                y_offset = STATS_H + (MINIMAP_H - mm_h) // 2
+
+                right_panel[
+                    y_offset:y_offset + mm_h,
+                    0:mm_w
+                ] = live_minimap
+
+
+                # --- COMBINE (NO RESIZE OF VIDEO) ---
+                final_frame = np.hstack((annotated, right_panel))
+
+
+                # --- CLEAN SEPARATORS ---
+                cv2.line(final_frame, (w, 0), (w, FINAL_H), (255,255,255), 2)
+                cv2.line(final_frame, (w, STATS_H), (FINAL_W, STATS_H), (255,255,255), 2)
+
+                # --- WRITE ---
+                writer.write(final_frame)
                 frame_idx += 1
                 
                 # every 30 frames the status is updated (and the progress bar)
@@ -383,8 +577,14 @@ class VideoProcessor:
                 self._update_status("stopped", frame_idx, max_frames, stats)
             else:
                 # create final screen and add it to the final video for 5 seconds
-                summary_frame = Visualizer.draw_final_screen(w, h, stats, frame_idx, fps)
-                for _ in range(int(fps * 5)): writer.write(summary_frame)
+                summary_left = Visualizer.draw_final_screen(w, h, stats, frame_idx, fps)
+                right_panel = np.zeros((FINAL_H, RIGHT_W, 3), dtype=np.uint8)
+                right_panel[:] = (25, 25, 25)
+                final_summary = np.hstack((summary_left, right_panel))
+
+                for _ in range(int(fps * 5)):
+                    writer.write(final_summary)
+
                 self._update_status("completed", frame_idx, max_frames, stats)
                 print(f"✅ Finished. Acc: {stats.accuracy:.1f}%")
 
