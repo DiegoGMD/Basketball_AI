@@ -28,6 +28,10 @@ class Config:
     # Video Constraints
     MAX_DURATION_SECONDS = 180  # Max processing limit (3 mins)
     TEST_MODE_DURATION = 15     # Duration for test mode
+    MIN_VIDEO_WIDTH = 640
+    MAX_VIDEO_WIDTH = 1920
+    MIN_VIDEO_HEIGHT = 360
+    MAX_VIDEO_HEIGHT = 1080
 
     # Retention Policy
     RETENTION_SECONDS = 1800    # 30 Minutes: Files older than this are auto-deleted
@@ -64,8 +68,10 @@ class Config:
         4: "Player Shooting"
     }
 
-    COURT_WIDTH_CM  = 1524
-    COURT_HEIGHT_CM = 1422
+    # Must match the court coordinates used by calibrate_new.py.
+    # Defaults below are FIBA half-court: 1500 cm wide, 1400 cm deep.
+    COURT_WIDTH_CM  = 1500
+    COURT_HEIGHT_CM = 1400
 
 # Ensure directories exist
 Config.UPLOAD_DIR.mkdir(exist_ok=True)
@@ -81,13 +87,58 @@ class ProcessingMode(str, Enum):
 processing_status = {}
 stop_flags = {}
 
+
+def validate_video_dimensions(width: int, height: int) -> None:
+    """Reject videos outside the supported resolution window."""
+    if width < Config.MIN_VIDEO_WIDTH or width > Config.MAX_VIDEO_WIDTH:
+        raise RuntimeError(
+            f"Unsupported video width {width}px. "
+            f"Supported range: {Config.MIN_VIDEO_WIDTH}-{Config.MAX_VIDEO_WIDTH}px."
+        )
+    if height < Config.MIN_VIDEO_HEIGHT or height > Config.MAX_VIDEO_HEIGHT:
+        raise RuntimeError(
+            f"Unsupported video height {height}px. "
+            f"Supported range: {Config.MIN_VIDEO_HEIGHT}-{Config.MAX_VIDEO_HEIGHT}px."
+        )
+
+
+def compute_panel_layout(frame_w: int, frame_h: int, minimap_shape: tuple[int, int, int]) -> dict:
+    """Build a right-panel layout that fits the full supported input range."""
+    minimap_src_h, minimap_src_w = minimap_shape[:2]
+    right_w = max(320, min(480, int(frame_w * 0.33)))
+    final_w = frame_w + right_w
+    final_h = frame_h
+    stats_h = final_h // 2
+    minimap_panel_h = final_h - stats_h
+    pad = 10
+
+    avail_w = max(1, right_w - pad * 2)
+    avail_h = max(1, minimap_panel_h - pad * 2)
+    mm_scale = min(avail_w / minimap_src_w, avail_h / minimap_src_h)
+    mm_w = max(1, int(minimap_src_w * mm_scale))
+    mm_h = max(1, int(minimap_src_h * mm_scale))
+    y_offset = stats_h + (minimap_panel_h - mm_h) // 2
+    x_offset = (right_w - mm_w) // 2
+
+    return {
+        "right_w": right_w,
+        "final_w": final_w,
+        "final_h": final_h,
+        "stats_h": stats_h,
+        "minimap_panel_h": minimap_panel_h,
+        "mm_w": mm_w,
+        "mm_h": mm_h,
+        "mm_x": x_offset,
+        "mm_y": y_offset,
+    }
+
 # ==================== HOMOGRAPHY ====================
 def load_homography():
-    """Loads the homography matrix saved by calibrate.py."""
+    """Loads the homography matrix saved by calibrate_new.py."""
     path = Config.HOMOGRAPHY_PATH
     if not path.exists():
         print("⚠️  homography.npy not found — minimap dots will be disabled.")
-        print("   Run:  python calibrate.py --video uploads\\your_video.mp4")
+        print("   Run:  python calibrate_new.py --video uploads\\your_video.mp4")
         return None
     H = np.load(str(path))
     print(f"✅ Homography loaded from {path}")
@@ -167,60 +218,100 @@ class AutoCleanup:
 
 # ==================== LOGIC CLASSES ====================
 
+class PlayerStats:
+    """Tracks shots and baskets for a single player (identified by track ID)."""
+    def __init__(self):
+        self.shots_attempted = 0
+        self.baskets_made = 0
+
+    @property
+    def accuracy(self):
+        if self.shots_attempted == 0: return 0.0
+        return (self.baskets_made / self.shots_attempted) * 100
+
+    def __repr__(self):
+        return f"PlayerStats(shots={self.shots_attempted}, baskets={self.baskets_made}, acc={self.accuracy:.1f}%)"
+
+
 class GameStats:
-    """Handles the logic for tracking shots, baskets, and percentages."""
+    """Handles the logic for tracking shots, baskets, and percentages — globally and per-player."""
     def __init__(self, fps):
         self.fps = fps
         self.shots_attempted = 0
         self.baskets_made = 0
-        
+
+        # Per-player stats: { track_id (int) -> PlayerStats }
+        self.player_stats: dict[int, PlayerStats] = {}
+        # The track ID of the last player who shot (so we can credit the basket to them)
+        self._last_shooter_id: int | None = None
+
         #calculate how many frames the cooldown lasts based on the FPS of the video
         self.shot_cooldown_frames = int(fps * Config.SHOT_COOLDOWN)
         self.basket_cooldown_frames = int(fps * Config.BASKET_COOLDOWN)
         self.anim_duration_frames = int(fps * Config.ANIMATION_DURATION)
-        
+
         self.last_shot_frame = -self.shot_cooldown_frames
         self.last_basket_frame = -self.basket_cooldown_frames
-        
+
         self.basket_position = None
         self.last_known_basket_pos = None
         self.animation_frames = deque(maxlen=self.anim_duration_frames)
 
-    # called when the model recognized a player shooting 
-    def register_shot(self, frame_idx):
+    def _get_player(self, track_id: int) -> PlayerStats:
+        """Lazily create a PlayerStats entry on first sight of a track ID."""
+        if track_id not in self.player_stats:
+            self.player_stats[track_id] = PlayerStats()
+        return self.player_stats[track_id]
+
+    # called when the model recognised a player shooting
+    def register_shot(self, frame_idx, track_id: int | None = None):
         if frame_idx - self.last_shot_frame >= self.shot_cooldown_frames:
             self.shots_attempted += 1
             self.last_shot_frame = frame_idx
+            self._last_shooter_id = track_id
+            if track_id is not None:
+                self._get_player(track_id).shots_attempted += 1
+                print(f"   🏀  Shot registered → Player #{track_id}")
             return True
         return False
 
-    # called when the model recognized the ball in basket 
+    # called when the model recognised the ball in the basket
     def register_basket(self, frame_idx, position=None):
         if frame_idx - self.last_basket_frame >= self.basket_cooldown_frames:
-            # if there is a basket but there was no recent shot, it automatically adds a shot (because you can't score without shooting, so AI missed the shot)
+            # If there was no recent shot, auto-add one (AI missed the shooting pose)
             if (frame_idx - self.last_shot_frame) > (self.shot_cooldown_frames * 2):
                 self.shots_attempted += 1
                 self.last_shot_frame = frame_idx
+                if self._last_shooter_id is not None:
+                    self._get_player(self._last_shooter_id).shots_attempted += 1
                 print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
 
-            if (self.shots_attempted < self.baskets_made):
-                self.shots_attempted = self.baskets_made    
-                print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
-            
+            if self.shots_attempted < self.baskets_made:
+                self.shots_attempted = self.baskets_made
+                print(f"   ⚠️   Shots < baskets correction applied.   ⚠️")
+
             self.baskets_made += 1
             self.last_basket_frame = frame_idx
             self.basket_position = position
-            
+
+            # Credit the basket to the last known shooter
+            if self._last_shooter_id is not None:
+                ps = self._get_player(self._last_shooter_id)
+                # Guard: baskets can't exceed shots for this player either
+                if ps.baskets_made < ps.shots_attempted:
+                    ps.baskets_made += 1
+                    print(f"   ✅  Basket credited → Player #{self._last_shooter_id}")
+
             self.animation_frames.clear()
             for i in range(self.anim_duration_frames):
                 self.animation_frames.append(frame_idx + i)
             return True
         return False
 
-    #calculate the shoot percentage (%)
+    #calculate the global shoot percentage (%)
     @property
     def accuracy(self):
-        if self.shots_attempted == 0: return 0.0 
+        if self.shots_attempted == 0: return 0.0
         return (self.baskets_made / self.shots_attempted) * 100
 
     def get_animation_progress(self, current_frame):
@@ -254,59 +345,55 @@ class Visualizer:
         cv2.circle(overlay, (cx, cy), int(15 * pulse), (0, 255, 255), -1)
         cv2.addWeighted(overlay, alpha * 0.7, frame, 1 - alpha * 0.3, 0, frame)
 
-    # Draw the scoreboard at the bottom (Shots, Baskets, Accuracy). Make it semi-transparent to make it readable.
-    @staticmethod
-    def draw_hud(frame, stats, w, h):
-        panel_h, panel_w = 100, min(700, w - 30)
-        x, y = 15, h - panel_h - 15
-        
-        sub_img = frame[y:y+panel_h, x:x+panel_w]
-        white_rect = np.full(sub_img.shape, 30, dtype=np.uint8)
-        res = cv2.addWeighted(sub_img, 0.2, white_rect, 0.8, 0)
-        frame[y:y+panel_h, x:x+panel_w] = res
-        cv2.rectangle(frame, (x, y), (x+panel_w, y+panel_h), (0, 200, 255), 2)
-        
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        def draw_stat_col(offset_x, label, value, color=(255,255,255)):
-            cv2.putText(frame, label, (x + offset_x, y + 30), font, 0.5, (180,180,180), 1)
-            cv2.putText(frame, str(value), (x + offset_x, y + 70), font, 1.3, color, 3)
-
-        col_w = panel_w // 3
-        draw_stat_col(20, "SHOTS", stats.shots_attempted)
-        draw_stat_col(20 + col_w, "BASKETS", stats.baskets_made, (0, 255, 100))
-        
-        acc_x = x + 2 * col_w + 20
-        cv2.putText(frame, "ACCURACY", (acc_x, y + 30), font, 0.5, (180,180,180), 1)
-        cv2.putText(frame, f"{stats.accuracy:.1f}%", (acc_x, y + 70), font, 1.0, (0, 255, 255), 2)
-        
-        bar_x, bar_y = acc_x, y + 80
-        bar_w = col_w - 40
-        cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + 8), (60,60,60), -1)
-        fill_w = int((stats.accuracy / 100) * bar_w)
-        if fill_w > 0:
-            cv2.rectangle(frame, (bar_x, bar_y), (bar_x + fill_w, bar_y + 8), (0, 200, 255), -1)
-
-    # Creates the final green/gray screen with a summary of all statistics.
+    # Creates the final screen with a summary of all statistics including per-player breakdown.
     @staticmethod
     def draw_final_screen(w, h, stats, total_frames, fps):
         canvas = np.zeros((h, w, 3), dtype=np.uint8)
         for i in range(h): canvas[i, :] = [(20 + i/h*20)]*3
         font = cv2.FONT_HERSHEY_SIMPLEX
-        
+
         cv2.putText(canvas, "PERFORMANCE SUMMARY", (w//2 - 250, h//4), font, 1.5, (255,255,255), 3)
+
+        # Global stats
         data = [
-            ("Total Shots", str(stats.shots_attempted)),
+            ("Total Shots",  str(stats.shots_attempted)),
             ("Baskets Made", str(stats.baskets_made)),
             ("Missed Shots", str(stats.shots_attempted - stats.baskets_made)),
-            ("Accuracy", f"{stats.accuracy:.1f}%"),
-            ("Duration", f"{int(total_frames/fps)} sec")
+            ("Accuracy",     f"{stats.accuracy:.1f}%"),
+            ("Duration",     f"{int(total_frames/fps)} sec")
         ]
         start_y = h//3
         for i, (label, val) in enumerate(data):
-            y_pos = start_y + (i * 60)
-            cv2.putText(canvas, label, (w//2 - 200, y_pos), font, 1.0, (200,200,200), 2)
-            cv2.putText(canvas, val, (w//2 + 100, y_pos), font, 1.0, (0,255,100) if "%" in val else (255,255,255), 2)
-            cv2.line(canvas, (w//2 - 200, y_pos + 20), (w//2 + 200, y_pos + 20), (50,50,50), 1)
+            y_pos = start_y + (i * 55)
+            cv2.putText(canvas, label, (w//2 - 200, y_pos), font, 0.9, (200,200,200), 2)
+            cv2.putText(canvas, val, (w//2 + 80, y_pos), font, 0.9,
+                        (0,255,100) if "%" in val else (255,255,255), 2)
+            cv2.line(canvas, (w//2 - 200, y_pos + 15), (w//2 + 200, y_pos + 15), (50,50,50), 1)
+
+        # Per-player breakdown (right side of the summary screen)
+        if stats.player_stats:
+            px_col = 60
+            py_start = h//4 + 10
+            cv2.putText(canvas, "PLAYER BREAKDOWN", (px_col, py_start), font, 0.8, (180,180,50), 2)
+            cv2.line(canvas, (px_col, py_start + 10), (px_col + 300, py_start + 10), (80,80,80), 1)
+
+            headers_y = py_start + 35
+            cv2.putText(canvas, "ID",    (px_col,       headers_y), font, 0.5, (140,140,140), 1)
+            cv2.putText(canvas, "SHOTS", (px_col + 60,  headers_y), font, 0.5, (140,140,140), 1)
+            cv2.putText(canvas, "MADE",  (px_col + 140, headers_y), font, 0.5, (140,140,140), 1)
+            cv2.putText(canvas, "ACC%",  (px_col + 220, headers_y), font, 0.5, (140,140,140), 1)
+
+            sorted_players = sorted(stats.player_stats.items(),
+                                    key=lambda kv: kv[1].shots_attempted, reverse=True)
+            for row_i, (pid, ps) in enumerate(sorted_players):
+                ry = headers_y + 30 + row_i * 32
+                if ry > h - 30: break
+                cv2.putText(canvas, f"#{pid}",             (px_col,       ry), font, 0.6, (255,255,255), 1)
+                cv2.putText(canvas, str(ps.shots_attempted),(px_col + 60,  ry), font, 0.6, (200,200,200), 1)
+                cv2.putText(canvas, str(ps.baskets_made),  (px_col + 140, ry), font, 0.6, (0,255,100),   1)
+                acc_color = (0,255,100) if ps.accuracy >= 50 else (0,140,255)
+                cv2.putText(canvas, f"{ps.accuracy:.0f}%", (px_col + 220, ry), font, 0.6, acc_color, 1)
+
         return canvas
     
 # ==================== MINIMAP RENDERER ====================
@@ -314,11 +401,37 @@ class MinimapRenderer:
     """
     Projects detected players and the ball onto the 2D court minimap
     using the pre-computed homography matrix.
+
+    MINIMAP ORIENTATION (minimap.png — half-court view):
+      TOP    of image = BASELINE  (basket end, FAR from camera)
+      BOTTOM of image = HALF-COURT LINE (NEAR the camera)
+
+    This matches what the camera sees in reverse:
+      In the video:   basket is at the FAR end (bottom of perspective view)
+      In the minimap: basket is at the TOP of the image
+
+    calibrate_new.py uses an image-oriented x-axis:
+      x_cm = 0       → right side of the video image
+      x_cm = COURT_W → left side of the video image
+
+    To draw correctly on the minimap, we mirror x back to court-left/court-right.
+
+    The minimap has a thin white border on all sides before the court area
+    starts. We account for this so dots land on the correct court features
+    rather than being offset by the border width.
     """
 
     # Real-world court size (cm) — must match calibrate_new.py
-    COURT_W = Config.COURT_WIDTH_CM
-    COURT_H = Config.COURT_HEIGHT_CM
+    COURT_W = Config.COURT_WIDTH_CM    # total width (sideline to sideline)
+    COURT_H = Config.COURT_HEIGHT_CM   # visible half-court depth (baseline → half-court line)
+
+    # Fractional offsets of the actual court area within the minimap image.
+    # Tuned for BE/tracker/minimap.png (333x297 px, thin outer border).
+    # These are resolution-independent — multiply by mm_w / mm_h at draw time.
+    _F_LEFT  = 0.0060   # left sideline
+    _F_RIGHT = 0.9940   # right sideline
+    _F_TOP   = 0.0067   # baseline (basket end) — TOP of minimap
+    _F_BOT   = 0.9933   # half-court line       — BOTTOM of minimap
 
     @staticmethod
     def project_point(pixel_xy: tuple, H: np.ndarray) -> tuple | None:
@@ -342,11 +455,44 @@ class MinimapRenderer:
     @staticmethod
     def court_to_minimap(x_cm: float, y_cm: float, mm_w: int, mm_h: int) -> tuple:
         """
-        Scales real-world court coordinates (cm) → minimap pixel coordinates.
-        Clamps to minimap bounds.
+        Converts real-world court coordinates (cm) → minimap pixel coordinates,
+        accounting for the border padding in the minimap image.
+
+        calibrate_new.py coordinate system:
+          x_cm = 0          → right side of the image / right-labelled points
+          x_cm = COURT_W    → left side of the image / left-labelled points
+          y_cm = 0          → baseline (basket end)  → TOP    of minimap
+          y_cm = COURT_H    → half-court line        → BOTTOM of minimap
+
+        minimap.png coordinate system:
+          left side of minimap  = left sideline on the court drawing
+          right side of minimap = right sideline on the court drawing
+
+        So x must be mirrored before drawing.
         """
-        px = int(np.clip(x_cm / MinimapRenderer.COURT_W * mm_w, 0, mm_w - 1))
-        py = int(np.clip(y_cm / MinimapRenderer.COURT_H * mm_h, 0, mm_h - 1))
+        r = MinimapRenderer
+
+        # Pixel extents of the court drawing within the (possibly resized) minimap
+        court_left  = r._F_LEFT  * mm_w
+        court_right = r._F_RIGHT * mm_w
+        court_top   = r._F_TOP   * mm_h
+        court_bot   = r._F_BOT   * mm_h
+        court_w_px  = court_right - court_left
+        court_h_px  = court_bot   - court_top
+
+        # calibrate_new.py stores x mirrored relative to the minimap drawing.
+        mirrored_x_cm = r.COURT_W - x_cm
+
+        # Map court cm → minimap pixel, clamp to court area
+        t = mirrored_x_cm / r.COURT_W               # 0.0 (left) … 1.0 (right)
+        px = court_left + t * court_w_px
+
+        # y_cm=0 (baseline) → top of minimap; y_cm=COURT_H → bottom
+        s = y_cm / r.COURT_H                         # 0.0 (baseline) … 1.0 (half-court)
+        py = court_top + s * court_h_px
+
+        px = int(np.clip(px, court_left,  court_right))
+        py = int(np.clip(py, court_top,   court_bot))
         return (px, py)
 
     @staticmethod
@@ -444,16 +590,35 @@ class VideoProcessor:
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            validate_video_dimensions(w, h)
+
+            if fps <= 0:
+                fps = 30.0
             
             if self.test_mode: max_frames = int(fps * Config.TEST_MODE_DURATION)
             else: max_frames = min(total_frames, int(fps * Config.MAX_DURATION_SECONDS))
-            
-            # prepare a "blank cassette" where we'll record the edited video. It must have the same dimensions (width, height) and frame rate (fps) as the original.
-            FINAL_W = w + 480
-            FINAL_H = h
-            RIGHT_W = 480
-            STATS_H = FINAL_H // 2
-            MINIMAP_H = FINAL_H - STATS_H
+
+            print("🔄 Loading Tracker...")
+            if not Config.TRACKER_PATH.exists():
+                raise FileNotFoundError(f"❌ Tracker not found at {Config.MODEL_PATH}")
+            else:
+                print("✅ Tracker loaded successfully!")
+
+            # prepare the minimap
+            minimap = cv2.imread(str(Config.MINIMAP_PATH))
+            if minimap is None:
+                raise FileNotFoundError("❌ minimap.png not found")
+
+            layout = compute_panel_layout(w, h, minimap.shape)
+            FINAL_W = layout["final_w"]
+            FINAL_H = layout["final_h"]
+            RIGHT_W = layout["right_w"]
+            STATS_H = layout["stats_h"]
+            MINIMAP_H = layout["minimap_panel_h"]
+            mm_w = layout["mm_w"]
+            mm_h = layout["mm_h"]
+            mm_x = layout["mm_x"]
+            mm_y = layout["mm_y"]
 
             writer = cv2.VideoWriter(
                 str(self.output_path),
@@ -469,20 +634,6 @@ class VideoProcessor:
             
             self._update_status("processing", 0, max_frames, stats)
             print(f"🎬 Processing {self.file_id} | Mode: {self.mode.value} | Frames: {max_frames}")
-
-            print("🔄 Loading Tracker...")
-            if not Config.TRACKER_PATH.exists():
-                raise FileNotFoundError(f"❌ Tracker not found at {Config.MODEL_PATH}")
-            else:
-                print("✅ Tracker loaded successfully!")
-
-            # prepare the minimap
-            minimap = cv2.imread(str(Config.MINIMAP_PATH))
-            if minimap is None:
-                raise FileNotFoundError("❌ minimap.png not found")
-
-            mm_w = RIGHT_W              # 480
-            mm_h = int(mm_w * 3 / 4)    # 360
 
             minimap_resized = cv2.resize(minimap, (mm_w, mm_h))
 
@@ -524,8 +675,6 @@ class VideoProcessor:
                     if stats.get_animation_progress(frame_idx) > 0:
                         Visualizer.draw_basket_effect(annotated, stats.basket_position, stats.get_animation_progress(frame_idx))
                 
-                # 3. HUD (Always visible in all modes)
-                Visualizer.draw_hud(annotated, stats, w, h)
                 
                 # Writes the modified frame to the new video file.
                 # --- RIGHT PANEL ---
@@ -535,11 +684,58 @@ class VideoProcessor:
 
                 # --- STATS PANEL (TOP) ---
                 stats_panel = np.zeros((STATS_H, RIGHT_W, 3), dtype=np.uint8)
+                font = cv2.FONT_HERSHEY_SIMPLEX
 
-                cv2.putText(stats_panel, "STATS", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2)
-                cv2.putText(stats_panel, f"Shots: {stats.shots_attempted}", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
-                cv2.putText(stats_panel, f"Baskets: {stats.baskets_made}", (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,100), 2)
-                cv2.putText(stats_panel, f"Accuracy: {stats.accuracy:.1f}%", (20, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
+                # ── Header ────────────────────────────────────────────────
+                cv2.putText(stats_panel, "STATS", (15, 35), font, 0.8, (255, 255, 255), 2)
+                cv2.line(stats_panel, (10, 45), (RIGHT_W - 10, 45), (80, 80, 80), 1)
+
+                # ── Global totals row ──────────────────────────────────────
+                cv2.putText(stats_panel, f"Shots:    {stats.shots_attempted}", (15, 75), font, 0.6, (200, 200, 200), 1)
+                cv2.putText(stats_panel, f"Baskets:  {stats.baskets_made}",    (15, 105), font, 0.6, (0, 255, 100), 1)
+                cv2.putText(stats_panel, f"Accuracy: {stats.accuracy:.1f}%",   (15, 135), font, 0.65, (0, 255, 255), 2)
+
+                # Accuracy bar
+                bar_x, bar_y, bar_w, bar_h_px = 15, 148, RIGHT_W - 30, 8
+                cv2.rectangle(stats_panel, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h_px), (60, 60, 60), -1)
+                fill = int((stats.accuracy / 100) * bar_w)
+                if fill > 0:
+                    cv2.rectangle(stats_panel, (bar_x, bar_y), (bar_x + fill, bar_y + bar_h_px), (0, 200, 255), -1)
+
+                # ── Per-player table ───────────────────────────────────────
+                if stats.player_stats:
+                    cv2.line(stats_panel, (10, 168), (RIGHT_W - 10, 168), (80, 80, 80), 1)
+                    cv2.putText(stats_panel, "PLAYER BREAKDOWN", (15, 188), font, 0.5, (180, 180, 50), 1)
+
+                    # Column headers
+                    cv2.putText(stats_panel, "ID", (15, 210), font, 0.42, (140, 140, 140), 1)
+                    cv2.putText(stats_panel, "SHOTS", (70, 210), font, 0.42, (140, 140, 140), 1)
+                    cv2.putText(stats_panel, "MADE", (170, 210), font, 0.42, (140, 140, 140), 1)
+                    cv2.putText(stats_panel, "ACC%", (260, 210), font, 0.42, (140, 140, 140), 1)
+                    cv2.line(stats_panel, (10, 215), (RIGHT_W - 10, 215), (60, 60, 60), 1)
+
+                    # One row per player, sorted by shots descending
+                    row_y = 233
+                    row_gap = 28
+                    sorted_players = sorted(stats.player_stats.items(),
+                                            key=lambda kv: kv[1].shots_attempted, reverse=True)
+                    for pid, ps in sorted_players:
+                        if row_y + row_gap > STATS_H - 10:
+                            break  # Panel is full
+
+                        # Highlight the most recent shooter
+                        is_last_shooter = (pid == stats._last_shooter_id)
+                        id_color = (0, 200, 255) if is_last_shooter else (255, 255, 255)
+
+                        cv2.putText(stats_panel, f"#{pid}", (15, row_y), font, 0.55, id_color, 1)
+                        cv2.putText(stats_panel, str(ps.shots_attempted), (80, row_y), font, 0.55, (200, 200, 200), 1)
+                        cv2.putText(stats_panel, str(ps.baskets_made), (180, row_y), font, 0.55, (0, 255, 100), 1)
+                        acc_str = f"{ps.accuracy:.0f}%"
+                        acc_color = (0, 255, 100) if ps.accuracy >= 50 else (0, 140, 255)
+                        cv2.putText(stats_panel, acc_str, (260, row_y), font, 0.55, acc_color, 1)
+                        row_y += row_gap
+                else:
+                    cv2.putText(stats_panel, "Waiting for players...", (15, 190), font, 0.45, (100, 100, 100), 1)
 
                 right_panel[0:STATS_H, :] = stats_panel
 
@@ -553,11 +749,9 @@ class VideoProcessor:
                     mm_h
                 )
 
-                y_offset = STATS_H + (MINIMAP_H - mm_h) // 2
-
                 right_panel[
-                    y_offset:y_offset + mm_h,
-                    0:mm_w
+                    mm_y:mm_y + mm_h,
+                    mm_x:mm_x + mm_w
                 ] = live_minimap
 
 
@@ -605,11 +799,14 @@ class VideoProcessor:
     def _process_detections(self, results, stats, frame_idx):
         # If the model didn't see anything in this frame (black or blank screen), exit immediately to save time.
         if not results[0].boxes: return
-        
+
+        boxes_data = results[0].boxes
+        track_ids = boxes_data.id.int().cpu().tolist() if boxes_data.id is not None else []
+
         # --- DETECTION PRINT (every 30 frames to avoid flooding the console) ---
         if frame_idx % 30 == 0:
             detected_classes = set()
-            for box in results[0].boxes:
+            for box in boxes_data:
                 cls = int(box.cls[0])
                 conf = float(box.conf[0])
                 if conf >= self.thresholds.get(cls, 0.3):
@@ -620,43 +817,58 @@ class VideoProcessor:
                 print(f"[Frame {frame_idx}] 🔍 Detected: (nothing above threshold)")
 
         # Scroll through the list of all found objects
-        for box in results[0].boxes:
+        for i, box in enumerate(boxes_data):
             cls = int(box.cls[0])
             conf = float(box.conf[0])
-            # Use instance-specific thresholds
             if conf < self.thresholds.get(cls, 0.3): continue
-            
-            # The model returns a rectangle. Here we calculate the exact center point of that rectangle. It's essential to know where the ball is flying.
+
+            # The model returns a rectangle. Here we calculate the exact center point of that rectangle.
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            center = ((x1+x2)//2, (y1+y2)//2)
-            
-            # If the model sees the basket, it stores its position (last_known_basket_pos). This is necessary because if the ball goes in, we need to know where to draw the animation.
-            if cls == 3: stats.last_known_basket_pos = center
-            # Player who shots
-            elif cls == 4: stats.register_shot(frame_idx)
-            # Ball in the basket: It also passes the position (target_pos) so the graphics system will know where to draw the visual explosion.
+            center = ((x1 + x2) // 2, (y1 + y2) // 2)
+
+            # Resolve the track ID for this detection (if tracking is active)
+            track_id = track_ids[i] if i < len(track_ids) else None
+
+            if cls == 3:
+                stats.last_known_basket_pos = center
+            elif cls == 4:
+                # Pass track_id so the shot is credited to the right player
+                stats.register_shot(frame_idx, track_id=track_id)
             elif cls == 1:
                 target_pos = stats.last_known_basket_pos or center
                 stats.register_basket(frame_idx, target_pos)
 
     # Used to show the human what the model sees. Draw the colored rectangles.
-    # TODO: Add track id to the player
     def _draw_yolo_boxes(self, frame, results):
         if not results[0].boxes: return
-        for box in results[0].boxes:
-            # track_ids = box.id.int().cpu().tolist() if box.id is not None else []
-            # tid = track_ids[i] if cls in (2, 4) and i < len(track_ids) else None
 
+        boxes_data = results[0].boxes
+        # Extract track IDs once for the whole frame (None-safe)
+        track_ids = boxes_data.id.int().cpu().tolist() if boxes_data.id is not None else []
+
+        for i, box in enumerate(boxes_data):
             cls = int(box.cls[0])
             conf = float(box.conf[0])
-            # Use instance-specific thresholds
             if conf < self.thresholds.get(cls, 0.3): continue
+
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            color = Config.COLORS.get(cls, (255,255,255))
-            label = f"{Config.CLASSES.get(cls)} {conf:.2f}"
-            
+            color = Config.COLORS.get(cls, (255, 255, 255))
+
+            # Build label: include track ID for players so we can identify them
+            class_name = Config.CLASSES.get(cls, f"cls{cls}")
+            if cls in (2, 4) and i < len(track_ids):
+                tid = track_ids[i]
+                label = f"#{tid} {class_name} {conf:.2f}"
+            else:
+                label = f"{class_name} {conf:.2f}"
+
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            # Draw a filled background behind the label so it is readable on any background
+            (tw, th), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            cv2.rectangle(frame, (x1, y1 - th - baseline - 6), (x1 + tw + 4, y1), color, -1)
+            cv2.putText(frame, label, (x1 + 2, y1 - baseline - 3),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
     # Draw motion trail polylines for each tracked object (from tracking_test.py)
     def _draw_tracking_trails(self, frame, results):

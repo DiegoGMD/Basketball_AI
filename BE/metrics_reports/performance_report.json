@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-22T13:59:20.613953",
+  "timestamp": "2026-04-23T12:20:41.605498",
   "model": "basketball_training/yolo11s_5classes/weights/best.pt",
   "summary": "Training completed in 18.9 hours (52 epochs).\nBest performance achieved at epoch 51.\n\nKey Metrics:\n- mAP@50: 0.8490 (mean average precision at 50% IoU)\n- mAP@50-95: 0.5125 (mAP across all IoU thresholds)\n- Precision: 0.8469 (accuracy of positive predictions)\n- Recall: 0.7863 (completeness of detections)\n\nFinal Loss: 1.3493",
   "strengths": [

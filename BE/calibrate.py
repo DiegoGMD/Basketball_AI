@@ -10,9 +10,9 @@
 #  STEP 1 — Choose your court standard.
 #      Uncomment ONE of the three blocks in the "COURT STANDARD" section below.
 #      If you don't know, measure the free-throw lane width on your court:
-#        FIBA  → lane is ~4.9 m wide  (most gyms outside the US)
-#        NBA   → lane is ~4.88 m wide (US pro courts, very similar to FIBA)
-#        NCAA  → lane is ~3.66 m wide (US college courts, noticeably narrower)
+#        FIBA  → lane is ~4.9 m wide
+#        NBA   → lane is ~4.88 m wide
+#        NCAA  → lane is ~3.66 m wide (US college courts)
 #      When in doubt, just pick FIBA — it will be very close.
 #
 #  STEP 2 — Measure the camera distance from the baseline (in cm).
@@ -38,34 +38,40 @@
 #
 #  REFERENCE POINTS — click EXACTLY in this order:
 #
-#   [C] camera side (top of your video frame)
-#   ────────────────────────[C]────────────────────────
-#   [3] left sideline cut        right sideline cut [4]
-#    |                                               |
-#    |               top of 3pt arc                  |
-#    |                 ·····[7]·····                 |
-#    |             ····             ····             |
-#    |           ···                   ···           |
-#    |          ··                       ··          |
-#    |    [8] left FT ────────────── right FT [9]    |
-#    |          |          PAINT          |          |
-#    |          |                         |          |
-#   [1]────────[5]                       [6]────────[2]
-#   left baseline corner          right baseline corner
-#   ───────────────────────────────────────────────────
-#   basket near [1][2]  ← FAR end of court, bottom of video frame
+#     [C] camera location
+#         (aproximate location where the camera who is fliming the input sits)
+#
+#     [B] Basket location
+#         (aproximate location where the basket being shot at sits)
+#     ────────────────────────[C]────────────────────────
+#  R  |???????????????                   ???????????????| L
+#     |????                                         ????| 
+#  s  |?                                               ?| s
+#  i [10]            ·········[9]·········           [11] i
+#  d  |           ···                     ···           | d
+#  e  |        ···          ·······          ···        | e
+#  l  |      ··           ··       ··           ··      | l
+#  i  |     |        ────[7]───────[8]────        |     | i
+#  n  |     |        |    ··       ··    |        |     | n
+#  e  |     |        |      ·······      |        |     | e
+#     |     |        |                   |        |     |
+#     |     |        |       ─[B]─       |        |     |
+#    [1]───[3]──────[5]─────────────────[6]──────[4]───[2]
+#                          baseline
+#     ───────────────────────────────────────────────────
 #
 #  POINTS:
-#   1. Left  baseline corner  (left sideline × baseline)           [FAR-LEFT]
-#   2. Right baseline corner  (right sideline × baseline)          [FAR-RIGHT]
-#   3. Left  sideline frame-cut (where frame cuts left sideline)   [NEAR-LEFT]
-#   4. Right sideline frame-cut (where frame cuts right sideline)  [NEAR-RIGHT]
-#   5. Left  3pt arc × baseline                                    [FAR, inner-left]
-#   6. Right 3pt arc × baseline                                    [FAR, inner-right]
-#   7. Top of 3pt arc (peak of the arc, furthest from baseline)    [MID, centre]
+#   1. Right  baseline corner  (left sideline × baseline)          [FAR-RIGHT]
+#   2. Left baseline corner  (right sideline × baseline)           [FAR-LEFT]
+#   3. Right  3pt arc × baselin                                    [FAR, inner-right]
+#   4. Left 3pt arc × baseline                                     [FAR, inner-left]
+#   5. Right free throw box × baseline                             [FAR, inner-right]
+#   6. Left free throw box × baseline                              [FAR, inner-left]
+#   7. Right free-throw line end                                   [MID-RIGHT]
 #   8. Left  free-throw line end                                   [MID-LEFT]
-#   9. Right free-throw line end                                   [MID-RIGHT]
-#
+#   9. Top of 3pt arc (peak of the arc, furthest from baseline)    [CLOSE, centre]
+#  10. Right  sideline frame-cut (where frame cuts left sideline)  [CLOSE, right]
+#  11. Left  sideline frame-cut (where frame cuts left sideline)   [CLOSE, left]
 # =============================================================================
 
 import argparse
