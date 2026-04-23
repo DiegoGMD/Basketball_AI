@@ -284,15 +284,15 @@ class GameStats:
                 self.last_shot_frame = frame_idx
                 if self._last_shooter_id is not None:
                     self._get_player(self._last_shooter_id).shots_attempted += 1
-                print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
-
-            if self.shots_attempted < self.baskets_made:
-                self.shots_attempted = self.baskets_made
-                print(f"   ⚠️   Shots < baskets correction applied.   ⚠️")
+                    print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
 
             self.baskets_made += 1
             self.last_basket_frame = frame_idx
             self.basket_position = position
+
+            if self.shots_attempted < self.baskets_made:
+                self.shots_attempted = self.baskets_made
+                print(f"   ⚠️   Shots < baskets correction applied.   ⚠️")
 
             # Credit the basket to the last known shooter
             if self._last_shooter_id is not None:
@@ -344,6 +344,38 @@ class Visualizer:
         pulse = 1.0 + np.sin(progress * np.pi * 4) * 0.3
         cv2.circle(overlay, (cx, cy), int(15 * pulse), (0, 255, 255), -1)
         cv2.addWeighted(overlay, alpha * 0.7, frame, 1 - alpha * 0.3, 0, frame)
+
+    # Draw the scoreboard at the bottom (Shots, Baskets, Accuracy). Make it semi-transparent to make it readable.
+    @staticmethod
+    def draw_hud(frame, stats, w, h):
+        panel_h, panel_w = 100, min(700, w - 30)
+        x, y = 15, h - panel_h - 15
+        
+        sub_img = frame[y:y+panel_h, x:x+panel_w]
+        white_rect = np.full(sub_img.shape, 30, dtype=np.uint8)
+        res = cv2.addWeighted(sub_img, 0.2, white_rect, 0.8, 0)
+        frame[y:y+panel_h, x:x+panel_w] = res
+        cv2.rectangle(frame, (x, y), (x+panel_w, y+panel_h), (0, 200, 255), 2)
+        
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        def draw_stat_col(offset_x, label, value, color=(255,255,255)):
+            cv2.putText(frame, label, (x + offset_x, y + 30), font, 0.5, (180,180,180), 1)
+            cv2.putText(frame, str(value), (x + offset_x, y + 70), font, 1.3, color, 3)
+
+        col_w = panel_w // 3
+        draw_stat_col(20, "SHOTS", stats.shots_attempted)
+        draw_stat_col(20 + col_w, "BASKETS", stats.baskets_made, (0, 255, 100))
+        
+        acc_x = x + 2 * col_w + 20
+        cv2.putText(frame, "ACCURACY", (acc_x, y + 30), font, 0.5, (180,180,180), 1)
+        cv2.putText(frame, f"{stats.accuracy:.1f}%", (acc_x, y + 70), font, 1.0, (0, 255, 255), 2)
+        
+        bar_x, bar_y = acc_x, y + 80
+        bar_w = col_w - 40
+        cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + 8), (60,60,60), -1)
+        fill_w = int((stats.accuracy / 100) * bar_w)
+        if fill_w > 0:
+            cv2.rectangle(frame, (bar_x, bar_y), (bar_x + fill_w, bar_y + 8), (0, 200, 255), -1)
 
     # Creates the final screen with a summary of all statistics including per-player breakdown.
     @staticmethod
@@ -404,7 +436,7 @@ class MinimapRenderer:
 
     MINIMAP ORIENTATION (minimap.png — half-court view):
       TOP    of image = BASELINE  (basket end, FAR from camera)
-      BOTTOM of image = HALF-COURT LINE (NEAR the camera)
+      BOTTOM of image = HALF-COURT LINE (NEAR the camera [may be behind the camera])
 
     This matches what the camera sees in reverse:
       In the video:   basket is at the FAR end (bottom of perspective view)
@@ -446,8 +478,10 @@ class MinimapRenderer:
 
         # Reject points that land far outside the court
         if x_cm < -200 or x_cm > MinimapRenderer.COURT_W + 200:
+            print("Position outside the court [hori]")
             return None
         if y_cm < -200 or y_cm > MinimapRenderer.COURT_H + 200:
+            print("Position outside the court [vert]")
             return None
 
         return (x_cm, y_cm)
@@ -675,6 +709,8 @@ class VideoProcessor:
                     if stats.get_animation_progress(frame_idx) > 0:
                         Visualizer.draw_basket_effect(annotated, stats.basket_position, stats.get_animation_progress(frame_idx))
                 
+                # 3. HUD (Always visible in all modes)
+                Visualizer.draw_hud(annotated, stats, w, h)
                 
                 # Writes the modified frame to the new video file.
                 # --- RIGHT PANEL ---
@@ -717,8 +753,7 @@ class VideoProcessor:
                     # One row per player, sorted by shots descending
                     row_y = 233
                     row_gap = 28
-                    sorted_players = sorted(stats.player_stats.items(),
-                                            key=lambda kv: kv[1].shots_attempted, reverse=True)
+                    sorted_players = sorted(stats.player_stats.items(), key=lambda kv: kv[1].shots_attempted, reverse=True)
                     for pid, ps in sorted_players:
                         if row_y + row_gap > STATS_H - 10:
                             break  # Panel is full
