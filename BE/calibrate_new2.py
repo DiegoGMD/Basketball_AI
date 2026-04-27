@@ -19,7 +19,8 @@
 #
 #  CONTROLS:
 #      Left-click        → place next REQUIRED point
-#      TAB               → press TAB to SKIP an optional point
+#      Right-click       → place/skip next OPTIONAL point
+#                          (right-click same spot a 2nd time to SKIP)
 #      U                 → undo last point
 #      R                 → reset all points
 #      S                 → save + open reprojection preview
@@ -27,14 +28,13 @@
 #      Q / ESC           → quit without saving
 #
 # =============================================================================
-#   old
 #                          baseline
-#    [1]───[3]──────[5]─────────────────[6]──────[4]───[2]
-#  L  |     |        |    |  ─[B]─  |    |        |     | R
-#     |     |        |    |         |    |        |     |
-#  s  |     |        |    | ······· |    |        |     | s
-#  i  |     |        |    ··       ··    |        |     | i
-#  d  |     |        ────[7]───────[8]────        |     | d
+#    [1]───[3]───────────[5]───────[6]───────────[4]───[2]
+#  L  |     |             |  ─[B]─  |             |     | R
+#     |     |             |         |             |     |
+#  s  |     |             | ······· |             |     | s
+#  i  |     |             ··       ··             |     | i
+#  d  |     |            [7]───────[8]            |     | d
 #  e  |      ··           ··       ··           ··      | e
 #  l  |        ···          ·······          ···        | l
 #  i  |           ···                     ···           | i
@@ -57,13 +57,17 @@
 #   2. Right baseline corner         right sideline x baseline             [FAR-RIGHT]
 #   3. Left 3pt area x baseline      left 3pt-baseline intersection        [FAR, inner-left]
 #   4. Right 3pt area x baseline     right 3pt-baseline intersection       [FAR, inner-right]
-#   5. Left free-throw box x base    left paint line x baseline            [FAR, inner-left]
-#   6. Right free-throw box x base   right paint line x baseline           [FAR, inner-right]
-#   7. Left free-throw line end      left edge of FT line                  [MID-LEFT]
-#   8. Right free-throw line end     right edge of FT line                 [MID-RIGHT]
+#   5. Left free-throw box x base    left paint line x baseline            [FAR, inner-left]  ★ FT anchor
+#   6. Right free-throw box x base   right paint line x baseline           [FAR, inner-right] ★ FT anchor
+#   7. Left free-throw line end      left edge of FT line                  [MID-LEFT]         ★ FT anchor
+#   8. Right free-throw line end     right edge of FT line                 [MID-RIGHT]        ★ FT anchor
 #   9. Top of 3pt area               peak of the area, furthest from base  [CLOSE, centre]
 #
-#  OPTIONAL (right-click to place,   right-click same spot again to skip):
+#  NOTE: Points 5-8 (★ FT anchor) form the free-throw rectangle and are used
+#        as the PRIMARY reference for the homography computation.  Click them
+#        as precisely as possible — they have the greatest impact on accuracy.
+#
+#  OPTIONAL (right-click to place, right-click same spot again to skip):
 #  10. Left sideline frame-cut       where frame cuts the left sideline    [CLOSE, left]
 #  11. Right sideline frame-cut      where frame cuts the right sideline   [CLOSE, right]
 #  12. Left centre-circle edge       left edge of centre circle
@@ -120,29 +124,40 @@ def _build_reference_pts(court_w, court_h, basket_x, basket_y, r_3pt,
       required  9pts: 1..9
       opt_near  2pts: 10 11
       opt_half  3pts: 12 13 14
+
+    NEW SCHEME — left in image = left on court (no mirroring):
+      1 = left  baseline corner
+      2 = right baseline corner
+      3 = left  3pt x baseline
+      4 = right 3pt x baseline
+      5 = left  paint x baseline  (FT anchor)
+      6 = right paint x baseline  (FT anchor)
+      7 = left  FT line end       (FT anchor)
+      8 = right FT line end       (FT anchor)
+      9 = top of 3pt arc
     """
     val    = max(0.0, r_3pt**2 - basket_y**2)
-    x3l    = basket_x - math.sqrt(val)
-    x3r    = basket_x + math.sqrt(val)
+    x3l    = basket_x - math.sqrt(val)   # left  3pt-baseline intersection
+    x3r    = basket_x + math.sqrt(val)   # right 3pt-baseline intersection
     y3top  = basket_y + r_3pt
     y_mid3 = basket_y + r_3pt * 0.5
     dx_m3  = math.sqrt(max(0.0, r_3pt**2 - (y_mid3 - basket_y)**2))
 
     required = np.array([
-        [0.0,            0.0       ],   # 1  left baseline corner in image
-        [float(court_w), 0.0       ],   # 2  right baseline corner in image
-        [float(x3l),     0.0       ],   # 3  left 3pt-baseline point in image
-        [float(x3r),     0.0       ],   # 4  right 3pt-baseline point in image
-        [float(paint_l), float(ft_y)],  # 5  left paint-FT line corner in image (top-left of FT rect)
-        [float(paint_r), float(ft_y)],  # 6  right paint-FT line corner in image (top-right of FT rect)
-        [float(paint_l), float(ft_y)],  # 7  left FT line end in image (same as 5 for now)
-        [float(paint_r), float(ft_y)],  # 8  right FT line end in image (same as 6 for now)
-        [float(basket_x),float(y3top)], # 9  top of 3pt arc
+        [0.0,            0.0           ],   # 1  left  baseline corner
+        [float(court_w), 0.0           ],   # 2  right baseline corner
+        [float(x3l),     0.0           ],   # 3  left  3pt-baseline point
+        [float(x3r),     0.0           ],   # 4  right 3pt-baseline point
+        [float(paint_l), 0.0           ],   # 5  left  paint-baseline (FT anchor)
+        [float(paint_r), 0.0           ],   # 6  right paint-baseline (FT anchor)
+        [float(paint_l), float(ft_y)   ],   # 7  left  FT line end    (FT anchor)
+        [float(paint_r), float(ft_y)   ],   # 8  right FT line end    (FT anchor)
+        [float(basket_x),float(y3top)  ],   # 9  top of 3pt arc
     ], dtype=np.float32)
 
     opt_near = np.array([
-        [0.0,                                float(cam_dist)],  # 10 left frame-cut in image
-        [float(court_w),                     float(cam_dist)],  # 11 right frame-cut in image
+        [0.0,                                float(cam_dist)],  # 10 left  frame-cut
+        [float(court_w),                     float(cam_dist)],  # 11 right frame-cut
     ], dtype=np.float32)
 
     opt_half = np.array([
@@ -158,24 +173,24 @@ def _build_reference_pts(court_w, court_h, basket_x, basket_y, r_3pt,
 #  Labels
 # ---------------------------------------------------------------------------
 REQUIRED_LABELS = [
-    " 1. LEFT baseline corner       left sideline x baseline                 [far-left in image]",
-    " 2. RIGHT baseline corner      right sideline x baseline                [far-right in image]",
-    " 3. LEFT 3pt arc x baseline    left 3pt line meets baseline             [inner-left in image]",
-    " 4. RIGHT 3pt arc x baseline   right 3pt line meets baseline            [inner-right in image]",
-    " 5. LEFT FT box top corner     left paint line meets FT line            [top-left of FT rect]",
-    " 6. RIGHT FT box top corner    right paint line meets FT line           [top-right of FT rect]",
-    " 7. LEFT FT line end           left edge of free-throw line             [mid-left in image]",
-    " 8. RIGHT FT line end          right edge of free-throw line            [mid-right in image]",
-    " 9. TOP of 3pt arc             peak of the arc, furthest from baseline  [top-centre]",
+    " 1. LEFT  baseline corner       left sideline x baseline                  [far-left in image]",
+    " 2. RIGHT baseline corner       right sideline x baseline                 [far-right in image]",
+    " 3. LEFT  3pt area x baseline   left 3pt line meets baseline              [inner-left in image]",
+    " 4. RIGHT 3pt area x baseline   right 3pt line meets baseline             [inner-right in image]",
+    " 5. LEFT  FT box x baseline  ★  left paint line meets baseline            [inner-left in image]",
+    " 6. RIGHT FT box x baseline  ★  right paint line meets baseline           [inner-right in image]",
+    " 7. LEFT  FT line end        ★  left edge of free-throw line              [mid-left in image]",
+    " 8. RIGHT FT line end        ★  right edge of free-throw line             [mid-right in image]",
+    " 9. TOP of 3pt area             peak of the arc, furthest from baseline   [top-centre]",
 ]
 OPT_NEAR_LABELS = [
-    "10. LEFT sideline frame-cut    where frame cuts the left sideline       [skip if off-camera]",
-    "11. RIGHT sideline frame-cut   where frame cuts the right sideline      [skip if off-camera]",
+    "10. LEFT  sideline frame-cut    where frame cuts the left sideline        [skip if off-camera]",
+    "11. RIGHT sideline frame-cut    where frame cuts the right sideline       [skip if off-camera]",
 ]
 OPT_HALF_LABELS = [
-    "12. LEFT  centre-circle edge   left edge of centre circle               [skip if near basket]",
-    "13. RIGHT centre-circle edge   right edge of centre circle              [skip if near basket]",
-    "14. HALF-COURT centre          midpoint of the half-court line          [skip if near basket]",
+    "12. LEFT  centre-circle edge   left edge of centre circle                [skip if near basket]",
+    "13. RIGHT centre-circle edge   right edge of centre circle               [skip if near basket]",
+    "14. HALF-COURT centre          midpoint of the half-court line           [skip if near basket]",
 ]
 
 NUM_REQUIRED = 9
@@ -284,36 +299,36 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
         cv2.putText(img, REQUIRED_LABELS[idx], (8, h-32),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.40, H_REQ, 1)
         if idx in (2, 3):
-            tip = "TIP: where the 3pt arc line INTERSECTS the BASELINE - inner-left / inner-right of the key"
+            tip = "TIP: where the 3pt arc line INTERSECTS the BASELINE — left then right of the key"
         elif idx in (4, 5):
-            tip = "TIP: where the FREE-THROW BOX meets the BASELINE - sharp corners inside the 3pt intersections"
+            tip = "TIP (★ FT ANCHOR): where the PAINT / FREE-THROW BOX meets the BASELINE — precise corners inside the 3pt intersections"
         elif idx in (6, 7):
-            tip = "TIP: left/right ends of the FREE-THROW LINE - horizontal line at the top of the paint box"
+            tip = "TIP (★ FT ANCHOR): left/right ends of the FREE-THROW LINE — horizontal line at the top of the paint box"
         elif idx == 8:
-            tip = "TIP: the highest visible point of the 3pt area, centred above the basket"
+            tip = "TIP: the highest visible point of the 3pt arc, centred above the basket"
         else:
-            tip = "TIP: the far corners where the sideline meets the baseline - mirrored in the image vs court coordinates"
+            tip = "TIP: far corners where the sideline meets the baseline — left corner first, then right"
         cv2.putText(img, tip, (8, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.37, (80,200,255), 1)
 
     elif not all_opt:
         idx = n_opt
         lbl, hint_c, _ = _opt_info(idx)
         grp = _group_name(idx)
-        cv2.putText(img, f"OPTIONAL  Group {grp}  {idx+1}/{NUM_OPTIONAL}  LEFT-CLICK (PRESS TAB to SKIP):",
+        cv2.putText(img, f"OPTIONAL  Group {grp}  {idx+1}/{NUM_OPTIONAL}  RIGHT-CLICK (2nd right-click near same spot = SKIP):",
                     (8, h-54), cv2.FONT_HERSHEY_SIMPLEX, 0.37, hint_c, 1)
         cv2.putText(img, lbl, (8, h-32), cv2.FONT_HERSHEY_SIMPLEX, 0.40, hint_c, 1)
         # Group-specific tips
         if idx < NUM_OPT_NEAR:
             tip = "Points 10/11: use the sideline frame-cuts if visible, or SKIP if the near sideline corners are outside the frame"
         else:
-            tip = "Points 12/13/14: half-court / centre-circle anchors - SKIP if the half-court line is outside the frame"
+            tip = "Points 12/13/14: half-court / centre-circle anchors — SKIP if the half-court line is outside the frame"
         cv2.putText(img, tip, (8, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.37, hint_c, 1)
 
     else:
         cv2.rectangle(img, (0, h-74), (w, h), (20,60,20), -1)
         total2 = n_req + sum(1 for p in optional_pts if p is not None)
-        qual = "EXCELLENT" if total2 >= 11 else ("GOOD" if total2 >= 8 else "MINIMUM - add more optionals")
-        cv2.putText(img, f"All points done!  {total2} total ({qual})   S = SAVE & PREVIEW  U = UNDO  R = RESET",
+        qual = "excellent" if total2 >= 11 else ("good" if total2 >= 8 else "minimum — add more optionals")
+        cv2.putText(img, f"All points done!  {total2} total ({qual})   S=SAVE & PREVIEW  U=undo  R=reset",
                     (8, h-42), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (100,255,100), 1)
     return img
 
@@ -335,13 +350,13 @@ def _mouse_cb(event, x, y, flags, param):
             display_img = _redraw(param)
             cv2.imshow("B_AI Calibration", display_img)
 
-    elif event == cv2.EVENT_TABBUTTON:
+    elif event == cv2.EVENT_RBUTTONDOWN:
         if all_req and not all_opt:
             if _pending_opt is None:
                 _pending_opt = [x, y]
                 ghost = _redraw(param)
                 cv2.circle(ghost, (x, y), 8, (180,180,50), 2)
-                cv2.putText(ghost, "press tab",
+                cv2.putText(ghost, "right-click same spot again to SKIP",
                             (x+12, y-6), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180,180,50), 1)
                 cv2.imshow("B_AI Calibration", ghost)
             else:
@@ -368,10 +383,10 @@ def _undo():
         removed = optional_pts.pop()
         lbl, _, _ = _opt_info(len(optional_pts))
         status = "skipped" if removed is None else f"at {removed}"
-        print(f"[calibrate] Undo - {lbl.split()[0]} ({status}) removed.")
+        print(f"[calibrate] Undo — {lbl.split()[0]} ({status}) removed.")
     elif required_pts:
         removed = required_pts.pop()
-        print(f"[calibrate] Undo - req pt {len(required_pts)+1} at {removed} removed.")
+        print(f"[calibrate] Undo — req pt {len(required_pts)+1} at {removed} removed.")
 
 
 # ---------------------------------------------------------------------------
@@ -395,17 +410,39 @@ def _compute_homography():
     src, dst = _collect_src_dst()
     total_placed = len(src)
     if total_placed < NUM_REQUIRED:
-        print(f"[calibrate] Only {total_placed} points - all {NUM_REQUIRED} required points are needed before saving.")
+        print(f"[calibrate] Only {total_placed} points — all {NUM_REQUIRED} required points are needed before saving.")
         return None, 0, float('inf')
-    H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
+
+    # ── FT-anchor weighted homography ────────────────────────────────────────
+    # Points 5-8 (indices 4-7 in required_pts) form the free-throw rectangle
+    # and are used as the PRIMARY reference.  We duplicate them to give them
+    # higher weight in the least-squares fit inside findHomography.
+    FT_REPEAT = 4          # each FT anchor counts as this many ordinary points
+    FT_IDX    = [4, 5, 6, 7]   # 0-based indices of pts 5,6,7,8 in required array
+
+    src_w = list(src)
+    dst_w = list(dst)
+    for fi in FT_IDX:
+        if fi < len(required_pts):          # always true when all 9 are placed
+            for _ in range(FT_REPEAT - 1):  # already in list once, add repeats
+                src_w.append(src[fi])
+                dst_w.append(dst[fi])
+
+    src_w = np.array(src_w, dtype=np.float32)
+    dst_w = np.array(dst_w, dtype=np.float32)
+
+    H, mask = cv2.findHomography(src_w, dst_w, cv2.RANSAC, 5.0)
     if H is None:
         return None, 0, float('inf')
-    inliers = int(mask.sum()) if mask is not None else 0
-    src_in = src[mask.ravel() == 1] if mask is not None else src
-    dst_in = dst[mask.ravel() == 1] if mask is not None else dst
-    proj   = cv2.perspectiveTransform(src_in.reshape(-1,1,2), H).reshape(-1,2)
-    errs   = np.linalg.norm(proj - dst_in, axis=1)
-    reproj = float(errs.mean()) if len(errs) > 0 else float('inf')
+
+    # Measure reprojection error only on the original (non-duplicated) points
+    mask_orig = mask[:len(src)].ravel() if mask is not None else np.ones(len(src), dtype=np.uint8)
+    inliers   = int(mask_orig.sum())
+    src_in    = src[mask_orig == 1]
+    dst_in    = dst[mask_orig == 1]
+    proj      = cv2.perspectiveTransform(src_in.reshape(-1,1,2), H).reshape(-1,2)
+    errs      = np.linalg.norm(proj - dst_in, axis=1)
+    reproj    = float(errs.mean()) if len(errs) > 0 else float('inf')
     return H, inliers, reproj
 
 
@@ -420,9 +457,9 @@ def _compute_and_save() -> bool:
         return False
     print(f"[calibrate] Homography from {total} pts | inliers={inliers} | reproj={reproj:.1f} cm")
     if inliers < 6:
-        print("[calibrate] WARNING: low inliers - re-click intersections more precisely.")
+        print("[calibrate] WARNING: low inliers — re-click intersections more precisely.")
     if reproj > 50:
-        print("[calibrate] WARNING: high error - check pts 1/2, 3/4, and 5/6 for exact baseline intersections.")
+        print("[calibrate] WARNING: high error — check FT anchor pts 5/6/7/8 first, then pts 1/2 baseline corners.")
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.save(str(OUTPUT_PATH), H)
     print(f"[calibrate] Saved → {OUTPUT_PATH}")
@@ -499,7 +536,7 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
     cv2.rectangle(preview, (0,0), (w_img, 54), (20,20,20), -1)
     cv2.putText(preview, "REPROJECTION PREVIEW  green=click  blue=expected  yellow=error px",
                 (8,18), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200,200,200), 1)
-    cv2.putText(preview, "Good: most errors < 10 px.  High error on 1/2 or 5/6? Re-click those baseline corners.",
+    cv2.putText(preview, "Good: most errors < 10 px.  High error on 5/6/7/8 (FT anchors)? Re-click those first.",
                 (8,40), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200,200,200), 1)
     return preview
 
@@ -507,7 +544,7 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
 def _show_preview(img_base: np.ndarray):
     H, inliers, reproj = _compute_homography()
     if H is None:
-        print(f"[calibrate] Cannot preview - not enough points (need all {NUM_REQUIRED} required points).")
+        print(f"[calibrate] Cannot preview — not enough points (need all {NUM_REQUIRED} required points).")
         return
     prev  = _draw_reprojection_preview(img_base, H)
     wname = "Reprojection Preview (Q / ESC to close)"
@@ -526,7 +563,7 @@ def _show_preview(img_base: np.ndarray):
 def _run_setup_wizard():
     print()
     print("=" * 70)
-    print("  COURT SETUP WIZARD - enter measurements in cm")
+    print("  COURT SETUP WIZARD — enter measurements in cm")
     print("  Press ENTER to accept the [FIBA default] shown.")
     print("=" * 70)
 
@@ -654,15 +691,16 @@ def main():
     for lbl, pt in zip(REQUIRED_LABELS, REF_REQUIRED):
         print(f"    {lbl}  ({pt[0]:.0f}, {pt[1]:.0f}) cm")
     print()
-    print("  OPTIONAL POINTS 10 & 11 - sideline frame-cuts (skip if off-camera):")
+    print("  OPTIONAL POINTS 10 & 11 — sideline frame-cuts (skip if off-camera):")
     for lbl, pt in zip(OPT_NEAR_LABELS, REF_OPT_NEAR):
         print(f"    {lbl}  ({pt[0]:.0f}, {pt[1]:.0f}) cm")
     print()
-    print("  OPTIONAL GROUP C - half-court / centre-circle (skip if half-court is off-camera):")
+    print("  OPTIONAL GROUP C — half-court / centre-circle (skip if half-court is off-camera):")
     for lbl, pt in zip(OPT_HALF_LABELS, REF_OPT_HALF):
         print(f"    {lbl}  ({pt[0]:.0f}, {pt[1]:.0f}) cm")
     print()
     print("  TIPS:")
+    print("   FT anchors (★ pts 5-8) → click these FIRST and as precisely as possible")
     print("   Base setup   → click all required points 1..9")
     print("   Mid-court    → add optional points 10 and 11 if the sideline frame-cuts are visible")
     print("   Close to rim → points 10/11 and 12/13/14 can be skipped if they are outside the frame")
