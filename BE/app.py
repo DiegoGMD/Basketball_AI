@@ -18,12 +18,12 @@ import json  # Added to parse custom thresholds
 class Config:
     """Centralized configuration for the application."""
     # Paths
-    UPLOAD_DIR = Path("uploads")
-    PROCESSED_DIR = Path("processed")
-    MODEL_PATH = Path("basketball_training/yolo11s_5classes/weights/best.pt")
-    TRACKER_PATH = Path("tracker/bytetrack.yaml")
-    MINIMAP_PATH = Path("tracker/minimap.png")
-    HOMOGRAPHY_PATH = Path("tracker/homography.npy")
+    UPLOAD_DIR = Path(__file__).parent / "uploads"
+    PROCESSED_DIR = Path(__file__).parent / "processed"
+    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo11s_5classes" / "weights" / "best.pt"
+    TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml"
+    MINIMAP_PATH = Path(__file__).parent / "tracker" / "minimap.png"
+    HOMOGRAPHY_PATH = Path(__file__).parent / "tracker" / "homography.npy"
 
     # Video Constraints
     MAX_DURATION_SECONDS = 180  # Max processing limit (3 mins)
@@ -34,13 +34,14 @@ class Config:
     MAX_VIDEO_HEIGHT = 1080
 
     # Retention Policy
-    RETENTION_SECONDS = 1800    # 30 Minutes: Files older than this are auto-deleted
+    RETENTION_SECONDS = 600    # 10 Minutes: Files older than this are auto-deleted
     CLEANUP_INTERVAL = 60       # Run cleanup check every 60 seconds
 
     # Physics & Rules (Time in seconds)
-    SHOT_COOLDOWN = 1.5     # if the model recognizes a shot,  it wait 1.5 seconds before counting another. Prevente a single shot from being counted 10 times in 10 consecutive frames 
+    SHOT_COOLDOWN = 1.5     # if the model recognizes a shot,  it waits 1.5 seconds before counting another.
+                            # Prevente a single shot from being counted 10 times in 10 consecutive frames 
     BASKET_COOLDOWN = 2.0   # the same for the basket recognition 
-    ANIMATION_DURATION = 2.0
+    ANIMATION_DURATION = 1.5
 
     # Confidence Thresholds
     THRESHOLDS = {
@@ -48,7 +49,7 @@ class Config:
         1: 0.25,    # Ball in Basket
         2: 0.5,     # Player
         3: 0.6,     # Basket
-        4: 0.4     # Player Shooting
+        4: 0.4      # Player Shooting
     }
 
     # Colors (BGR Format for OpenCV)
@@ -108,8 +109,8 @@ def compute_panel_layout(frame_w: int, frame_h: int, minimap_shape: tuple[int, i
     right_w = max(320, min(480, int(frame_w * 0.33)))
     final_w = frame_w + right_w
     final_h = frame_h
-    stats_h = final_h // 2
-    minimap_panel_h = final_h - stats_h
+    minimap_panel_h = minimap_shape[1]
+    stats_h = final_h - minimap_panel_h
     pad = 10
 
     avail_w = max(1, right_w - pad * 2)
@@ -709,8 +710,10 @@ class VideoProcessor:
                     if stats.get_animation_progress(frame_idx) > 0:
                         Visualizer.draw_basket_effect(annotated, stats.basket_position, stats.get_animation_progress(frame_idx))
                 
-                # 3. HUD (Always visible in all modes)
-                Visualizer.draw_hud(annotated, stats, w, h)
+                # 3. HUD (Only in STATS EFFECTS)
+                # [The stats panel is already in FULL_TRACKING mode]
+                if self.mode == ProcessingMode.STATS_EFFECTS:
+                    Visualizer.draw_hud(annotated, stats, w, h)
                 
                 # Writes the modified frame to the new video file.
                 # --- RIGHT PANEL ---
