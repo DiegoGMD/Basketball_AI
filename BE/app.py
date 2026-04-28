@@ -104,22 +104,35 @@ def validate_video_dimensions(width: int, height: int) -> None:
 
 
 def compute_panel_layout(frame_w: int, frame_h: int, minimap_shape: tuple[int, int, int]) -> dict:
-    """Build a right-panel layout that fits the full supported input range."""
+    """Build a right-panel layout that fits the full supported input range.
+
+    The minimap panel height is derived from the actual scaled minimap image so
+    that any minimap (portrait, landscape, square) is handled correctly.
+    All remaining vertical space is given to the stats area.
+    """
     minimap_src_h, minimap_src_w = minimap_shape[:2]
     right_w = max(320, min(480, int(frame_w * 0.33)))
     final_w = frame_w + right_w
     final_h = frame_h
-    minimap_panel_h = minimap_shape[1]
-    stats_h = final_h - minimap_panel_h
     pad = 10
 
+    # Scale the minimap to fit the full panel width (minus padding), keeping
+    # its aspect ratio.  The height is determined by the image itself — we
+    # never reserve a fixed block for it.
     avail_w = max(1, right_w - pad * 2)
-    avail_h = max(1, minimap_panel_h - pad * 2)
-    mm_scale = min(avail_w / minimap_src_w, avail_h / minimap_src_h)
-    mm_w = max(1, int(minimap_src_w * mm_scale))
+    mm_scale = avail_w / minimap_src_w           # fit width exactly
+    mm_w = avail_w                               # fills available width
     mm_h = max(1, int(minimap_src_h * mm_scale))
-    y_offset = stats_h + (minimap_panel_h - mm_h) // 2
+
+    # The minimap panel is exactly as tall as the scaled image (plus padding).
+    minimap_panel_h = mm_h + pad * 2
+
+    # Stats panel gets everything above the minimap panel.
+    stats_h = max(1, final_h - minimap_panel_h)
+
+    # Center the minimap image inside its panel (vertically and horizontally).
     x_offset = (right_w - mm_w) // 2
+    y_offset = stats_h + pad   # top of minimap panel + one pad unit
 
     return {
         "right_w": right_w,
@@ -479,10 +492,10 @@ class MinimapRenderer:
 
         # Reject points that land far outside the court
         if x_cm < -200 or x_cm > MinimapRenderer.COURT_W + 200:
-            print("Position outside the court [hori]")
+            # print("Position outside the court [hori]")
             return None
         if y_cm < -200 or y_cm > MinimapRenderer.COURT_H + 200:
-            print("Position outside the court [vert]")
+            # print("Position outside the court [vert]")
             return None
 
         return (x_cm, y_cm)
@@ -849,10 +862,11 @@ class VideoProcessor:
                 conf = float(box.conf[0])
                 if conf >= self.thresholds.get(cls, 0.3):
                     detected_classes.add(Config.CLASSES.get(cls, f"Class {cls}"))
-            if detected_classes:
-                print(f"[Frame {frame_idx}] 🔍 Detected: {', '.join(sorted(detected_classes))}")
-            else:
-                print(f"[Frame {frame_idx}] 🔍 Detected: (nothing above threshold)")
+            # Terminal printer of detections
+            # if detected_classes:
+            #     print(f"[Frame {frame_idx}] 🔍 Detected: {', '.join(sorted(detected_classes))}")
+            # else:
+            #     print(f"[Frame {frame_idx}] 🔍 Detected: (nothing above threshold)")
 
         # Scroll through the list of all found objects
         for i, box in enumerate(boxes_data):

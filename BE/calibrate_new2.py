@@ -198,7 +198,8 @@ NUM_OPT_NEAR = 2
 NUM_OPT_HALF = 3
 NUM_OPTIONAL = NUM_OPT_NEAR + NUM_OPT_HALF   # 5
 
-OUTPUT_PATH = Path(__file__).parent / "tracker" / "homography.npy"
+HOMOGRAPHY_OUTPUT_PATH = Path(__file__).parent / "tracker" / "homography.npy"
+PROJECTION_OUTPUT_PATH = Path(__file__).parent / "tracker" / "reprojection_preview.png"
 
 # ---------------------------------------------------------------------------
 #  Colours
@@ -460,9 +461,9 @@ def _compute_and_save() -> bool:
         print("[calibrate] WARNING: low inliers — re-click intersections more precisely.")
     if reproj > 50:
         print("[calibrate] WARNING: high error — check FT anchor pts 5/6/7/8 first, then pts 1/2 baseline corners.")
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    np.save(str(OUTPUT_PATH), H)
-    print(f"[calibrate] Saved → {OUTPUT_PATH}")
+    HOMOGRAPHY_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    np.save(str(HOMOGRAPHY_OUTPUT_PATH), H)
+    print(f"[calibrate] Saved → {HOMOGRAPHY_OUTPUT_PATH}")
     return True
 
 
@@ -555,6 +556,12 @@ def _show_preview(img_base: np.ndarray):
         if k in (ord('q'), 27): break
         if cv2.getWindowProperty(wname, cv2.WND_PROP_VISIBLE) < 1: break
     cv2.destroyWindow(wname)
+
+    # The projection preview saver isn't really working,
+    # seems like is some problem with closing the preview window above
+    PROJECTION_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(PROJECTION_OUTPUT_PATH), prev)
+    print(f"[calibrate] Preview saved → {str(PROJECTION_OUTPUT_PATH)}")
 
 
 # ---------------------------------------------------------------------------
@@ -700,11 +707,11 @@ def main():
         print(f"    {lbl}  ({pt[0]:.0f}, {pt[1]:.0f}) cm")
     print()
     print("  TIPS:")
-    print("   FT anchors (★ pts 5-8) → click these FIRST and as precisely as possible")
-    print("   Base setup   → click all required points 1..9")
-    print("   Mid-court    → add optional points 10 and 11 if the sideline frame-cuts are visible")
-    print("   Close to rim → points 10/11 and 12/13/14 can be skipped if they are outside the frame")
-    print("   Half-court   → add points 12/13/14 for maximum precision")
+    print("   FT anchors (pts 5-8)  → click these FIRST and as precisely as possible")
+    print("   Base setup            → click all required points 1..9")
+    print("   Mid-court             → add optional points 10 and 11 if the sideline frame-cuts are visible")
+    print("   Close to the edge     → points 10/11 and 12/13/14 can be skipped if they are outside the frame")
+    print("   Half-court            → add points 12/13/14 for maximum precision")
     print("   Save needs all 9 required points. Optional points improve stability.")
     print("   After saving, check the preview: errors < 10 px = good calibration.")
     print("=" * 70)
