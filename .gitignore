@@ -56,6 +56,7 @@ BE/basketball-detection-srfkd-1/
 BE/processed/
 BE/runs/
 BE/uploads/
+BE/metrics_reports/
 
 # Large model files
 *.pt

@@ -472,12 +472,12 @@ class MinimapRenderer:
     COURT_H = Config.COURT_HEIGHT_CM   # visible half-court depth (baseline → half-court line)
 
     # Fractional offsets of the actual court area within the minimap image.
-    # Tuned for BE/tracker/minimap.png (333x297 px, thin outer border).
+    # Tuned for the new minimap.png (1042x974 px, very thin outer border).
     # These are resolution-independent — multiply by mm_w / mm_h at draw time.
-    _F_LEFT  = 0.0060   # left sideline
-    _F_RIGHT = 0.9940   # right sideline
-    _F_TOP   = 0.0067   # baseline (basket end) — TOP of minimap
-    _F_BOT   = 0.9933   # half-court line       — BOTTOM of minimap
+    _F_LEFT  = 0.0029   # left sideline
+    _F_RIGHT = 0.9962   # right sideline
+    _F_TOP   = 0.0031   # baseline (basket end) — TOP of minimap
+    _F_BOT   = 0.9959   # half-court line       — BOTTOM of minimap
 
     @staticmethod
     def project_point(pixel_xy: tuple, H: np.ndarray) -> tuple | None:
