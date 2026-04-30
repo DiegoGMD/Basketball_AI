@@ -2,7 +2,7 @@
 #  calibrate.py  —  B_AI Court Homography Calibration Tool
 #
 #  Works for ANY camera position — close to the basket, mid-court, or at the
-#  half-court line.  Height 0.5-2 m, capturing ONE HALF of the court.
+#  half-court line.  Camera height 1-2 m, capturing ONE HALF of the court.
 #
 #      BOTTOM of frame = baseline (basket end)     — always the FAR end
 #      TOP    of frame = closest visible court line — changes with cam position
@@ -27,20 +27,27 @@
 #      P                 → open reprojection preview without saving
 #      Q / ESC           → quit without saving
 #
+#  ZOOM / PAN:
+#      Scroll wheel      → zoom in / out  (centred on cursor)
+#      Z / X             → zoom in / out  (keyboard alternative)
+#      0                 → reset zoom & pan
+#      Middle-drag       → pan while zoomed in
+#      Arrow keys        → pan while zoomed in
+#
 # =============================================================================
 #                          baseline
 #    [1]───[3]───────────[5]───────[6]───────────[4]───[2]
 #  L  |     |             |  ─[B]─  |             |     | R
 #     |     |             |         |             |     |
 #  s  |     |             | ······· |             |     | s
-#  i  |     |             ··       ··             |     | i
-#  d  |     |            [7]───────[8]            |     | d
-#  e  |      ··           ··       ··           ··      | e
-#  l  |        ···          ·······          ···        | l
-#  i  |           ···                     ···           | i
-#  n [10]            ·········[9]·········           [11] n
-#  e  |?                                               ?| e
-#     |????                                         ????|
+#  i  [10]  |             ··       ··             |  [11] i
+#  d  |?    |            [7]───────[8]            |    ?| d
+#  e  |?     ··           ··       ··           ··     ?| e
+#  l  |??      ···          ·······          ···      ??| l
+#  i  |??         ···                     ···         ??| i
+#  n  |???           ·········[9]·········           ???| n
+#  e  |????                                         ????| e
+#     |???????                                   ???????|
 #     |???????????????                   ???????????????| 
 #     ────────────────────────[C]────────────────────────
 #
@@ -49,6 +56,9 @@
 #
 #     [B] basket location
 #         (approximate location where the basket being shot at sits)
+#
+#     [?] Area not visible
+#         (All covered in the "?" sign is not visible by the camera)
 #
 #     ───────────────────────────────────────────────────
 #
@@ -227,6 +237,80 @@ _pending_opt: list | None       = None
 COURT_BASKET_Y_CM: float | None = None
 COURT_R_3PT_CM:    float | None = None
 
+# ---------------------------------------------------------------------------
+#  Zoom / pan state  (display-only — all stored points are in original coords)
+# ---------------------------------------------------------------------------
+_zoom:       float      = 1.0          # current zoom factor
+_pan_x:      float      = 0.0          # top-left of viewport in original-image pixels
+_pan_y:      float      = 0.0
+_ZOOM_MIN:   float      = 1.0
+_ZOOM_MAX:   float      = 8.0
+_ZOOM_STEP:  float      = 1.25
+_mid_drag:   bool       = False        # middle-mouse pan in progress
+_drag_start: list       = [0, 0]       # screen coords where drag started
+_pan_start:  list       = [0.0, 0.0]   # pan offset at drag start
+
+
+def _screen_to_img(sx: int, sy: int) -> tuple[int, int]:
+    """Convert a screen (window) coordinate to original-image coordinate."""
+    ix = int(sx / _zoom + _pan_x)
+    iy = int(sy / _zoom + _pan_y)
+    return ix, iy
+
+
+def _img_to_screen(ix: float, iy: float) -> tuple[int, int]:
+    """Convert an original-image coordinate to screen coordinate."""
+    sx = int((ix - _pan_x) * _zoom)
+    sy = int((iy - _pan_y) * _zoom)
+    return sx, sy
+
+
+def _clamp_pan(img_h: int, img_w: int, win_h: int, win_w: int):
+    """Keep pan within valid bounds so we never scroll off the image."""
+    global _pan_x, _pan_y
+    max_px = max(0.0, img_w - win_w / _zoom)
+    max_py = max(0.0, img_h - win_h / _zoom)
+    _pan_x = max(0.0, min(_pan_x, max_px))
+    _pan_y = max(0.0, min(_pan_y, max_py))
+
+
+def _apply_zoom(img: np.ndarray) -> np.ndarray:
+    """Crop the viewport region and scale it up for display."""
+    if _zoom == 1.0 and _pan_x == 0.0 and _pan_y == 0.0:
+        return img
+    h, w = img.shape[:2]
+    # viewport in original-image coordinates
+    vx1 = int(_pan_x)
+    vy1 = int(_pan_y)
+    vx2 = min(w, int(_pan_x + w / _zoom))
+    vy2 = min(h, int(_pan_y + h / _zoom))
+    crop = img[vy1:vy2, vx1:vx2]
+    if crop.size == 0:
+        return img
+    return cv2.resize(crop, (w, h), interpolation=cv2.INTER_LINEAR)
+
+
+def _zoom_at(screen_x: int, screen_y: int, factor: float, win_w: int, win_h: int,
+             img_w: int, img_h: int):
+    """Zoom in/out keeping the point under the cursor fixed."""
+    global _zoom, _pan_x, _pan_y
+    # image-space point under cursor before zoom
+    ix = screen_x / _zoom + _pan_x
+    iy = screen_y / _zoom + _pan_y
+    new_zoom = max(_ZOOM_MIN, min(_ZOOM_MAX, _zoom * factor))
+    _zoom  = new_zoom
+    # adjust pan so the same image point stays under the cursor
+    _pan_x = ix - screen_x / _zoom
+    _pan_y = iy - screen_y / _zoom
+    _clamp_pan(img_h, img_w, win_h, win_w)
+
+
+def _reset_zoom():
+    global _zoom, _pan_x, _pan_y
+    _zoom  = 1.0
+    _pan_x = 0.0
+    _pan_y = 0.0
+
 
 def _opt_info(flat_idx: int) -> tuple[str, tuple, np.ndarray | None]:
     """Return (label, dot_color, ref_row) for a flat optional index."""
@@ -248,6 +332,19 @@ def _group_name(flat_idx: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+#  Drawing helpers
+# ---------------------------------------------------------------------------
+def _draw_box_marker(img: np.ndarray, pt: tuple, color: tuple, size: int = 7):
+    """Draw a filled square marker with a black border (anchor-point style)."""
+    x, y = pt
+    cv2.rectangle(img, (x - size - 2, y - size - 2), (x + size + 2, y + size + 2), (0, 0, 0), -1)
+    cv2.rectangle(img, (x - size, y - size), (x + size, y + size), color, -1)
+
+
+# Indices (0-based in required_pts) that should render as box anchors: pts 1,2 → idx 0,1
+_BOX_REQ_IDX = {0, 1}   # points 1 and 2 (sideline corners at baseline)
+
+# ---------------------------------------------------------------------------
 #  Drawing
 # ---------------------------------------------------------------------------
 def _redraw(img_base: np.ndarray) -> np.ndarray:
@@ -256,12 +353,15 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
     n_req = len(required_pts)
     n_opt = len(optional_pts)
 
-    # Required points
+    # Required points — draw in original-image space before zoom is applied
     for i, pt in enumerate(required_pts):
         is_next = (i == n_req - 1) and n_req < NUM_REQUIRED
         c = C_REQ_NEXT if is_next else C_REQ_DONE
-        cv2.circle(img, tuple(pt), 9, (0,0,0), -1)
-        cv2.circle(img, tuple(pt), 7, c, -1)
+        if i in _BOX_REQ_IDX:
+            _draw_box_marker(img, tuple(pt), c, size=7)
+        else:
+            cv2.circle(img, tuple(pt), 9, (0,0,0), -1)
+            cv2.circle(img, tuple(pt), 7, c, -1)
         tag = REQUIRED_LABELS[i].split()[0].strip()
         cv2.putText(img, tag, (pt[0]+10, pt[1]-8), cv2.FONT_HERSHEY_SIMPLEX, 0.52, c, 2)
 
@@ -269,10 +369,63 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
     for i, pt in enumerate(optional_pts):
         if pt is None: continue
         lbl, c, _ = _opt_info(i)
-        cv2.circle(img, tuple(pt), 9, (0,0,0), -1)
-        cv2.circle(img, tuple(pt), 7, c, -1)
+        if i < NUM_OPT_NEAR:   # points 10 and 11 — sideline frame-cuts → box marker
+            _draw_box_marker(img, tuple(pt), c, size=7)
+        else:
+            cv2.circle(img, tuple(pt), 9, (0,0,0), -1)
+            cv2.circle(img, tuple(pt), 7, c, -1)
         tag = lbl.split()[0].strip()
         cv2.putText(img, tag, (pt[0]+10, pt[1]-8), cv2.FONT_HERSHEY_SIMPLEX, 0.52, c, 2)
+
+    # Sideline lines: pt1 (idx 0) <-> pt10 (opt idx 0)  and  pt2 (idx 1) <-> pt11 (opt idx 1)
+    opt10 = optional_pts[0] if len(optional_pts) > 0 and optional_pts[0] is not None else None
+    opt11 = optional_pts[1] if len(optional_pts) > 1 and optional_pts[1] is not None else None
+    if n_req >= 1 and opt10 is not None:
+        cv2.line(img, tuple(required_pts[0]), tuple(opt10), C_OPT_NEAR, 2)
+    if n_req >= 2 and opt11 is not None:
+        cv2.line(img, tuple(required_pts[1]), tuple(opt11), C_OPT_NEAR, 2)
+
+    # ── Expected court lines projected via homography ─────────────────────
+    # Once we have enough points for a homography, project the baseline and
+    # sidelines back onto the image as dim guide lines.
+    C_EXPECTED = (160, 160, 40)   # dim yellow
+    if len(required_pts) >= NUM_REQUIRED:
+        _H, _inliers, _ = _compute_homography()
+        if _H is not None:
+            try:
+                _Hi = np.linalg.inv(_H)
+                court_w = float(REF_REQUIRED[1][0])   # pt2 x = right sideline x
+                ft_y    = float(REF_REQUIRED[6][1])   # pt7 y = FT line depth
+                # Always draw guide lines to the full half-court depth so
+                # sidelines are visible all the way to the half-court line.
+                # REF_OPT_HALF[2] is pt 14 (half-court centre), y = HALF_Y.
+                half_y_ref = float(REF_OPT_HALF[2][1]) if REF_OPT_HALF is not None else float(ft_y) * 5
+                near_y = half_y_ref   # extend guide lines to half-court
+
+                def _proj_line(cx1, cy1, cx2, cy2, colour, thickness=1):
+                    """Project a court-space segment onto the image and draw it."""
+                    pts_c = np.array([[[cx1, cy1]], [[cx2, cy2]]], dtype=np.float32)
+                    pts_i = cv2.perspectiveTransform(pts_c, _Hi)
+                    p1i = (int(round(pts_i[0][0][0])), int(round(pts_i[0][0][1])))
+                    p2i = (int(round(pts_i[1][0][0])), int(round(pts_i[1][0][1])))
+                    cv2.line(img, p1i, p2i, colour, thickness)
+
+                # Baseline (far end): left corner → right corner
+                _proj_line(0.0, 0.0, court_w, 0.0, C_EXPECTED, 2)
+                # Left sideline: baseline corner → half-court line
+                _proj_line(0.0, 0.0, 0.0, near_y, C_EXPECTED, 2)
+                # Right sideline: baseline corner → half-court line
+                _proj_line(court_w, 0.0, court_w, near_y, C_EXPECTED, 2)
+                # Half-court line (dim — shows extent of the active zone)
+                C_HALF = (80, 160, 80)   # dim green
+                _proj_line(0.0, near_y, court_w, near_y, C_HALF, 1)
+            except Exception:
+                pass
+
+    # Apply zoom/pan — crops & scales the image for display
+    img = _apply_zoom(img)
+
+    # ── Overlays drawn AFTER zoom so they stay sharp & fixed on screen ────────
 
     # Top status bar
     placed = sum(1 for p in optional_pts if p is not None)
@@ -287,6 +440,14 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
     for lx, txt, c in [(w-320, "REQ", C_REQ_DONE), (w-260, "10/11=cut", C_OPT_NEAR),
                         (w-150, "12+=half", C_OPT_HALF)]:
         cv2.putText(img, txt, (lx, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.35, c, 1)
+
+    # Zoom indicator (top-right corner)
+    if _zoom > 1.0:
+        zoom_txt = f"ZOOM  {_zoom:.1f}x   0=reset  scroll/Z/X=zoom  mid-drag/arrows=pan"
+        (tw, th), _ = cv2.getTextSize(zoom_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
+        tx = w - tw - 10
+        cv2.rectangle(img, (tx - 4, 28), (w - 2, 28 + th + 6), (0, 0, 0), -1)
+        cv2.putText(img, zoom_txt, (tx, 28 + th), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 220, 255), 1)
 
     # Bottom instruction bar (3 lines)
     all_req = n_req >= NUM_REQUIRED
@@ -335,10 +496,50 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-#  Mouse callback
+#  Mouse callback  (zoom-aware)
 # ---------------------------------------------------------------------------
 def _mouse_cb(event, x, y, flags, param):
     global display_img, _pending_opt
+    global _zoom, _pan_x, _pan_y, _mid_drag, _drag_start, _pan_start
+
+    img_base = param
+    h_img, w_img = img_base.shape[:2]
+    h_win, w_win = display_img.shape[:2] if display_img is not None else (h_img, w_img)
+
+    # ── Middle-mouse pan ──────────────────────────────────────────────────────
+    if event == cv2.EVENT_MBUTTONDOWN:
+        _mid_drag   = True
+        _drag_start = [x, y]
+        _pan_start  = [_pan_x, _pan_y]
+        return
+
+    if event == cv2.EVENT_MOUSEMOVE and _mid_drag:
+        dx = (x - _drag_start[0]) / _zoom
+        dy = (y - _drag_start[1]) / _zoom
+        _pan_x = _pan_start[0] - dx
+        _pan_y = _pan_start[1] - dy
+        _clamp_pan(h_img, w_img, h_win, w_win)
+        display_img = _redraw(img_base)
+        cv2.imshow("B_AI Calibration", display_img)
+        return
+
+    if event == cv2.EVENT_MBUTTONUP:
+        _mid_drag = False
+        return
+
+    # ── Scroll-wheel zoom ─────────────────────────────────────────────────────
+    if event == cv2.EVENT_MOUSEWHEEL:
+        factor = _ZOOM_STEP if flags > 0 else 1.0 / _ZOOM_STEP
+        _zoom_at(x, y, factor, w_win, h_win, w_img, h_img)
+        display_img = _redraw(img_base)
+        cv2.imshow("B_AI Calibration", display_img)
+        return
+
+    # ── Convert screen click → original-image coordinate ─────────────────────
+    ix, iy = _screen_to_img(x, y)
+    ix = max(0, min(w_img - 1, ix))
+    iy = max(0, min(h_img - 1, iy))
+
     n_req = len(required_pts)
     n_opt = len(optional_pts)
     all_req = n_req >= NUM_REQUIRED
@@ -346,31 +547,36 @@ def _mouse_cb(event, x, y, flags, param):
 
     if event == cv2.EVENT_LBUTTONDOWN:
         if not all_req:
-            required_pts.append([x, y])
+            required_pts.append([ix, iy])
             _pending_opt = None
-            display_img = _redraw(param)
+            display_img = _redraw(img_base)
             cv2.imshow("B_AI Calibration", display_img)
 
     elif event == cv2.EVENT_RBUTTONDOWN:
         if all_req and not all_opt:
             if _pending_opt is None:
-                _pending_opt = [x, y]
-                ghost = _redraw(param)
+                # Store pending in image coords
+                _pending_opt = [ix, iy]
+                ghost = _redraw(img_base)
+                # Draw ghost circle in screen coords
                 cv2.circle(ghost, (x, y), 8, (180,180,50), 2)
                 cv2.putText(ghost, "right-click same spot again to SKIP",
                             (x+12, y-6), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180,180,50), 1)
                 cv2.imshow("B_AI Calibration", ghost)
             else:
-                dist = math.hypot(x - _pending_opt[0], y - _pending_opt[1])
+                # Compare in image coords
+                dist = math.hypot(ix - _pending_opt[0], iy - _pending_opt[1])
+                # Scale the skip-threshold by zoom so it feels consistent
+                threshold = 25 / _zoom
                 lbl, _, _ = _opt_info(n_opt)
-                if dist < 25:
+                if dist < threshold:
                     optional_pts.append(None)
                     print(f"[calibrate] {lbl.split()[0]} SKIPPED.")
                 else:
-                    optional_pts.append([x, y])
-                    print(f"[calibrate] {lbl.split()[0]} placed at ({x},{y}).")
+                    optional_pts.append([ix, iy])
+                    print(f"[calibrate] {lbl.split()[0]} placed at ({ix},{iy}).")
                 _pending_opt = None
-                display_img = _redraw(param)
+                display_img = _redraw(img_base)
                 cv2.imshow("B_AI Calibration", display_img)
 
 
@@ -415,10 +621,10 @@ def _compute_homography():
         return None, 0, float('inf')
 
     # ── FT-anchor weighted homography ────────────────────────────────────────
-    # Points 5-8 (indices 4-7 in required_pts) form the free-throw rectangle
-    # and are used as the PRIMARY reference.  We duplicate them to give them
-    # higher weight in the least-squares fit inside findHomography.
-    FT_REPEAT = 4          # each FT anchor counts as this many ordinary points
+    # Points 5-8 (indices 4-7 in required_pts) form the free-throw rectangle.
+    # Weight reduced to 2x so sideline corners (pts 1,2,10,11) have enough
+    # pull to prevent the homography from drifting at the court edges.
+    FT_REPEAT = 2          # each FT anchor counts as this many ordinary points
     FT_IDX    = [4, 5, 6, 7]   # 0-based indices of pts 5,6,7,8 in required array
 
     src_w = list(src)
@@ -428,6 +634,15 @@ def _compute_homography():
             for _ in range(FT_REPEAT - 1):  # already in list once, add repeats
                 src_w.append(src[fi])
                 dst_w.append(dst[fi])
+
+    # Also give extra weight to the baseline sideline corners (pts 1 & 2, indices 0 & 1)
+    # so the homography stretches correctly to the full court width / sidelines.
+    CORNER_REPEAT = 2
+    for ci in (0, 1):
+        if ci < len(required_pts):
+            for _ in range(CORNER_REPEAT - 1):
+                src_w.append(src[ci])
+                dst_w.append(dst[ci])
 
     src_w = np.array(src_w, dtype=np.float32)
     dst_w = np.array(dst_w, dtype=np.float32)
@@ -464,7 +679,67 @@ def _compute_and_save() -> bool:
     HOMOGRAPHY_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.save(str(HOMOGRAPHY_OUTPUT_PATH), H)
     print(f"[calibrate] Saved → {HOMOGRAPHY_OUTPUT_PATH}")
+
+    # ── Save the half-court boundary (HALF_Y) alongside the homography ────────
+    # The tracker uses this value to DISCARD any detection that maps to a
+    # court-space Y beyond HALF_Y (the far half).  That region was never
+    # visible to the camera so its homography is unreliable ("numb zone").
+    half_y_val = float(REF_OPT_HALF[2][1]) if REF_OPT_HALF is not None else float(HALF_Y)
+    half_y_path = HOMOGRAPHY_OUTPUT_PATH.parent / "half_court_y.npy"
+    np.save(str(half_y_path), np.array([half_y_val], dtype=np.float32))
+    print(f"[calibrate] Half-court boundary saved → {half_y_path}  (y ≤ {half_y_val:.0f} cm is ACTIVE)")
+    print(f"[calibrate]   Detections with court-Y > {half_y_val:.0f} cm will be IGNORED by the tracker.")
     return True
+
+
+# ---------------------------------------------------------------------------
+#  Half-court boundary filter  (import and use this in tracker / app.py)
+# ---------------------------------------------------------------------------
+_HALF_Y_PATH = Path(__file__).parent / "tracker" / "half_court_y.npy"
+
+def is_in_active_half(court_x: float, court_y: float) -> bool:
+    """Return True if (court_x, court_y) falls inside the calibrated half-court.
+
+    The active zone is  0 ≤ y ≤ HALF_Y  (the half the camera can actually see).
+    Any point beyond HALF_Y is in the "numb zone" — the homography there is
+    extrapolated and unreliable, so the tracker should discard those detections.
+
+    Usage in tracker / app.py:
+        from calibrate import is_in_active_half
+        court_pos = apply_homography(H, pixel_pt)
+        if not is_in_active_half(*court_pos):
+            continue   # discard — outside visible half
+    """
+    try:
+        half_y = float(np.load(str(_HALF_Y_PATH))[0])
+    except Exception:
+        half_y = float(HALF_Y)   # fall back to the constant defined at top of file
+    court_w = float(COURT_W)
+    return (0.0 <= court_x <= court_w) and (0.0 <= court_y <= half_y)
+
+
+def filter_to_active_half(court_points: np.ndarray) -> np.ndarray:
+    """Filter an (N, 2) array of court-space points, keeping only those in the
+    active half-court.  Returns the filtered subset (may be empty).
+
+    Usage:
+        pts_court = cv2.perspectiveTransform(pts_px.reshape(-1,1,2), H).reshape(-1,2)
+        pts_active = filter_to_active_half(pts_court)
+    """
+    try:
+        half_y = float(np.load(str(_HALF_Y_PATH))[0])
+    except Exception:
+        half_y = float(HALF_Y)
+    court_w = float(COURT_W)
+    if len(court_points) == 0:
+        return court_points
+    mask = (
+        (court_points[:, 0] >= 0.0) &
+        (court_points[:, 0] <= court_w) &
+        (court_points[:, 1] >= 0.0) &
+        (court_points[:, 1] <= half_y)
+    )
+    return court_points[mask]
 
 
 # ---------------------------------------------------------------------------
@@ -487,8 +762,9 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
     basket_y = COURT_BASKET_Y_CM if COURT_BASKET_Y_CM is not None else basket_y
     r_3pt   = COURT_R_3PT_CM if COURT_R_3PT_CM is not None else math.hypot(bx - x3l, basket_y)
 
-    # Preview depth: prefer the near frame-cut depth from optional pts 10/11.
-    cam_y = float(REF_OPT_NEAR[0][1]) if REF_OPT_NEAR is not None else ft_y * 2.5
+    # Preview depth: always use full half-court depth so the grid reaches the sidelines.
+    half_y_ref = float(REF_OPT_HALF[2][1]) if REF_OPT_HALF is not None else float(ft_y) * 5
+    cam_y = half_y_ref
 
     def proj(cx, cy):
         pt = np.array([[[cx, cy]]], dtype=np.float32)
@@ -511,6 +787,14 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
     cv2.line(preview, proj(paint_r, 0), proj(paint_r, ft_y), (255,120,0), 2)
     cv2.line(preview, proj(paint_l, ft_y), proj(paint_r, ft_y), (255,120,0), 2)
 
+    # Half-court line — bright green: marks the boundary of the ACTIVE zone
+    hc_l = proj(0.0, cam_y);  hc_r = proj(court_w, cam_y)
+    cv2.line(preview, hc_l, hc_r, (0, 220, 60), 3)
+    mid_hc = ((hc_l[0] + hc_r[0]) // 2, (hc_l[1] + hc_r[1]) // 2)
+    cv2.putText(preview, "HALF-COURT (active zone ends here)",
+                (mid_hc[0] - 160, mid_hc[1] - 8),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 220, 60), 1)
+
     # 3pt arc
     arc_pts = []
     for deg in range(-90, 91, 2):
@@ -525,11 +809,24 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
     # Reprojection error dots
     src, dst = _collect_src_dst()
     proj_pts = cv2.perspectiveTransform(src.reshape(-1,1,2), H_inv).reshape(-1,2)
-    for orig, pp in zip(src, proj_pts):
+    # Determine which indices correspond to sideline anchor pts (1,2 = req idx 0,1; 10,11 = opt idx 0,1)
+    _sideline_indices = set()
+    for _si in (0, 1):
+        _sideline_indices.add(_si)
+    _opt_start = len(required_pts)
+    for _oi in range(min(NUM_OPT_NEAR, len(optional_pts))):
+        if optional_pts[_oi] is not None:
+            _sideline_indices.add(_opt_start + _oi)
+    for idx, (orig, pp) in enumerate(zip(src, proj_pts)):
         ox,oy = int(orig[0]), int(orig[1])
         px,py = int(pp[0]),   int(pp[1])
-        cv2.circle(preview, (ox,oy), 6, (0,255,0), -1)
-        cv2.circle(preview, (px,py), 6, (0,0,255), 2)
+        if idx in _sideline_indices:
+            s = 6
+            cv2.rectangle(preview, (ox-s, oy-s), (ox+s, oy+s), (0,255,0), -1)
+            cv2.rectangle(preview, (px-s, py-s), (px+s, py+s), (0,0,255), 2)
+        else:
+            cv2.circle(preview, (ox,oy), 6, (0,255,0), -1)
+            cv2.circle(preview, (px,py), 6, (0,0,255), 2)
         err = math.hypot(ox-px, oy-py)
         cv2.putText(preview, f"{err:.0f}px", (ox+8,oy-5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255,255,0), 1)
@@ -548,6 +845,13 @@ def _show_preview(img_base: np.ndarray):
         print(f"[calibrate] Cannot preview — not enough points (need all {NUM_REQUIRED} required points).")
         return
     prev  = _draw_reprojection_preview(img_base, H)
+
+    # The projection preview saver isn't really working,
+    # seems like is some problem with closing the preview window above
+    PROJECTION_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(PROJECTION_OUTPUT_PATH), prev)
+    print(f"[calibrate] Preview saved → {str(PROJECTION_OUTPUT_PATH)}")
+
     wname = "Reprojection Preview (Q / ESC to close)"
     cv2.namedWindow(wname, cv2.WINDOW_NORMAL)
     cv2.imshow(wname, prev)
@@ -556,13 +860,6 @@ def _show_preview(img_base: np.ndarray):
         if k in (ord('q'), 27): break
         if cv2.getWindowProperty(wname, cv2.WND_PROP_VISIBLE) < 1: break
     cv2.destroyWindow(wname)
-
-    # The projection preview saver isn't really working,
-    # seems like is some problem with closing the preview window above
-    PROJECTION_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(PROJECTION_OUTPUT_PATH), prev)
-    print(f"[calibrate] Preview saved → {str(PROJECTION_OUTPUT_PATH)}")
-
 
 # ---------------------------------------------------------------------------
 #  Court setup wizard
@@ -722,6 +1019,8 @@ def main():
     cv2.setMouseCallback(wname, _mouse_cb, base_img)
     cv2.imshow(wname, display_img)
 
+    h_img, w_img = base_img.shape[:2]
+
     while True:
         key = cv2.waitKey(20) & 0xFF
         if key in (ord('q'), 27):
@@ -745,6 +1044,50 @@ def main():
                 _show_preview(base_img)
                 print("[calibrate] Done. Restart app.py to use the new homography.")
                 break
+
+        # ── Zoom keys ────────────────────────────────────────────────────────
+        elif key in (ord('z'), ord('Z')):
+            # Zoom in centred on image centre
+            _, _, ww, wh = cv2.getWindowImageRect(wname)
+            cx, cy = (ww or w_img) // 2, (wh or h_img) // 2
+            _zoom_at(cx, cy, _ZOOM_STEP, ww or w_img, wh or h_img, w_img, h_img)
+            display_img = _redraw(base_img)
+            cv2.imshow(wname, display_img)
+        elif key in (ord('x'), ord('X')):
+            _, _, ww, wh = cv2.getWindowImageRect(wname)
+            cx, cy = (ww or w_img) // 2, (wh or h_img) // 2
+            _zoom_at(cx, cy, 1.0 / _ZOOM_STEP, ww or w_img, wh or h_img, w_img, h_img)
+            display_img = _redraw(base_img)
+            cv2.imshow(wname, display_img)
+        elif key == ord('0'):
+            _reset_zoom()
+            display_img = _redraw(base_img)
+            cv2.imshow(wname, display_img)
+
+        # ── Arrow-key pan ─────────────────────────────────────────────────────
+        elif key in (81, 83, 82, 84):   # left, right, up, down (Linux)
+            step = max(20, int(50 / _zoom))
+            _, _, ww, wh = cv2.getWindowImageRect(wname)
+            if key == 81:  _pan_x -= step
+            elif key == 83: _pan_x += step
+            elif key == 82: _pan_y -= step
+            elif key == 84: _pan_y += step
+            _clamp_pan(h_img, w_img, wh or h_img, ww or w_img)
+            display_img = _redraw(base_img)
+            cv2.imshow(wname, display_img)
+        # Windows arrow keys
+        elif key == 0:
+            ext = cv2.waitKey(0) & 0xFF
+            step = max(20, int(50 / _zoom))
+            _, _, ww, wh = cv2.getWindowImageRect(wname)
+            if ext == 75:   _pan_x -= step   # left
+            elif ext == 77: _pan_x += step   # right
+            elif ext == 72: _pan_y -= step   # up
+            elif ext == 80: _pan_y += step   # down
+            _clamp_pan(h_img, w_img, wh or h_img, ww or w_img)
+            display_img = _redraw(base_img)
+            cv2.imshow(wname, display_img)
+
         if cv2.getWindowProperty(wname, cv2.WND_PROP_VISIBLE) < 1:
             break
 

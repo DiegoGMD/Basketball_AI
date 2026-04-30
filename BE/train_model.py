@@ -29,11 +29,11 @@ class Config:
     Modify this section to tune the training process.
     """
     # --- Paths ---
-    PROJECT_NAME = "basketball_training"
-    RUN_NAME = "yolo11s_5classes"
+    PROJECT_NAME = r"C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training"
+    RUN_NAME = "yolo26s_5classes"
     DATASET_DIR = Path("basketball-detection-srfkd-1")
     DATA_YAML = "data_basketball.yaml"
-    BASE_MODEL = "yolo11s.pt"  # Starting point (Pre-trained: YOLO SMALL)
+    BASE_MODEL = "yolo26s.pt"  # Starting point (Pre-trained: YOLO SMALL)
     
     # --- Checkpoint Handling ---
     RESUME_PATH = Path(f"{PROJECT_NAME}/{RUN_NAME}/weights/last.pt")
@@ -49,13 +49,13 @@ class Config:
     IMG_SIZE = 640          # Input image resolution
     PATIENCE = 15           # Early stopping patience (epochs without improvement)
     SAVE_PERIOD = 5         # Save heavy checkpoints every 5 epochs
-    OPTIMIZER = 'AdamW'     #Adaptive Moment Estimation Weight decay: Modern optimizer that balances fast learning with good generalization. The best for this useCase
+    OPTIMIZER = 'MuSGD'     #
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-    LR0 = 0.01         # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.001        # Final learning rate (lr0 * lrf)
+    LR0 = 0.001         # Initial learning rate (SGD=1E-2, Adam=1E-3)
+    LRF = 0.01        # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.0005
+    WEIGHT_DECAY = 0.0001
     WARMUP_EPOCHS = 3.0
     COS_LR = True      # Use Cosine LR scheduler
     
@@ -63,7 +63,7 @@ class Config:
     # Adjusted to prioritize bounding box accuracy over classification
     BOX_GAIN = 7.5     # Box loss gain
     CLS_GAIN = 0.5     # Class loss gain
-    DFL_GAIN = 1.5     # Distribution Focal Loss gain
+    # DFL_GAIN = 1.5     # Distribution Focal Loss gain
     
     # --- Data Augmentation (Optimized for Sports/Motion) ---
     # Heavy augmentation helps YOLO generalize on limited datasets
@@ -74,18 +74,18 @@ class Config:
         'hsv_s': 0.7,       # HSV-Saturation adjustment
         'hsv_v': 0.4,       # HSV-Value adjustment
         #geometry and position
-        'degrees': 10.0,    # Rotation (+/- deg)
+        'degrees': 5.0,    # Rotation (+/- deg)
         'translate': 0.1,   # Translation (+/- fraction)
-        'scale': 0.6,       # Scale gain (+/- gain)
-        'shear': 2.0,       # Shear angle (+/- deg) - Important for basket perspective
+        'scale': 0.4,       # Scale gain (+/- gain)
+        'shear': 1.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
         'mosaic': 1.0,      # Mosaic (Probability)
-        'mixup': 0.15,       # Mixup (Probability) - Helps with player overlap
-        'copy_paste': 0.1,  # Segment copy-paste (Probability)
-        'erasing': 0.4,     # Random erasing (Probability) - Simulates occlusion
+        'mixup': 0.05,       # Mixup (Probability) - Helps with player overlap
+        'copy_paste': 0.0,  # Segment copy-paste (Probability)
+        'erasing': 0.2,     # Random erasing (Probability) - Simulates occlusion
         'auto_augment': 'randaugment', # Use RandAugment policy
     }
 
@@ -300,7 +300,7 @@ class TrainingSession:
             'warmup_epochs': Config.WARMUP_EPOCHS,
             'box': Config.BOX_GAIN,
             'cls': Config.CLS_GAIN,
-            'dfl': Config.DFL_GAIN,
+            #'dfl': Config.DFL_GAIN,
             
             # Flatten augmentation dict into arguments
             **Config.AUGMENTATION,

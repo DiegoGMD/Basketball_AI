@@ -20,7 +20,7 @@ class Config:
     # Paths
     UPLOAD_DIR = Path(__file__).parent / "uploads"
     PROCESSED_DIR = Path(__file__).parent / "processed"
-    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo11s_5classes" / "weights" / "best.pt"
+    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26s_5classes" / "weights" / "best.pt"
     TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml"
     MINIMAP_PATH = Path(__file__).parent / "tracker" / "minimap.png"
     HOMOGRAPHY_PATH = Path(__file__).parent / "tracker" / "homography.npy"

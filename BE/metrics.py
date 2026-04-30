@@ -20,7 +20,7 @@ from datetime import datetime
 # ==============================================================================
 class MetricsConfig:
     PROJECT_NAME = "basketball_training"
-    RUN_NAME = "yolo11s_5classes"
+    RUN_NAME = "yolo26s_5classes"
     MODEL_PATH = Path(f"{PROJECT_NAME}/{RUN_NAME}/weights/best.pt")
     RESULTS_CSV = Path(f"{PROJECT_NAME}/{RUN_NAME}/results.csv")
     DATASET_DIR = Path("basketball-detection-srfkd-1")
