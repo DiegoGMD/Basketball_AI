@@ -34,59 +34,60 @@ class Config:
     DATASET_DIR = Path("basketball-detection-srfkd-1")
     DATA_YAML = "data_basketball.yaml"
     BASE_MODEL = "yolo26s.pt"  # Starting point (Pre-trained: YOLO SMALL)
+    # BASE_MODEL = r"C:\Users\NewUser\Documents\basketball_weights\best.pt" # Recicle on a new machine
     
     # --- Checkpoint Handling ---
     RESUME_PATH = Path(f"{PROJECT_NAME}/{RUN_NAME}/weights/last.pt")
+    # RESUME_PATH = Path(r"C:\Users\NewUser\Documents\basketball_weights\last.pt") # Recicle on a new machine
     
     # --- Hardware & System ---
-    WORKERS = 0        # How many processors load the images (Set to 0 for Windows compatibility to avoid multiprocessing errors)
-    DEVICE = 0         # GPU Index (0 = Pytorch will use the GPU first, if it is available)
-    SEED = 42          # Locks the random seed to guarantee consistent training outcomes across runs.
+    WORKERS = 0             # How many processors load the images (Set to 0 for Windows compatibility to avoid multiprocessing errors)
+    DEVICE = 0              # GPU Index (0 = Pytorch will use the GPU first, if it is available)
+    SEED = 42               # Locks the random seed to guarantee consistent training outcomes across runs.
     
     # --- Core Training Hyperparameters ---
     EPOCHS = 200            # Total number of training epochs
     BATCH_SIZE = 8          # Batch size: the model studies 8 images at a time before updating the "brain" (Adjust based on my VRAM, 8 is good for 6GB VRAM)
     IMG_SIZE = 640          # Input image resolution
-    PATIENCE = 15           # Early stopping patience (epochs without improvement)
+    PATIENCE = 20           # Early stopping patience (epochs without improvement)
     SAVE_PERIOD = 5         # Save heavy checkpoints every 5 epochs
-    OPTIMIZER = 'MuSGD'     #
+    OPTIMIZER = 'MuSGD'
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-    LR0 = 0.001         # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.01        # Final learning rate (lr0 * lrf)
+    LR0 = 0.01              # Initial learning rate (SGD=1E-2, Adam=1E-3)
+    LRF = 0.1               # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.0001
-    WARMUP_EPOCHS = 3.0
-    COS_LR = True      # Use Cosine LR scheduler
+    WEIGHT_DECAY = 0.00005
+    WARMUP_EPOCHS = 5.0
+    COS_LR = True           # Use Cosine LR scheduler
     
     # --- Loss Function Weights --- Heavily penalizes bounding box errors to ensure tracking precision on moving targets.
     # Adjusted to prioritize bounding box accuracy over classification
-    BOX_GAIN = 7.5     # Box loss gain
-    CLS_GAIN = 0.5     # Class loss gain
-    # DFL_GAIN = 1.5     # Distribution Focal Loss gain
+    BOX_GAIN = 7.5          # Box loss gain
+    CLS_GAIN = 0.5          # Class loss gain
+    # DFL_GAIN = 1.5        # Distribution Focal Loss gain
     
     # --- Data Augmentation (Optimized for Sports/Motion) ---
     # Heavy augmentation helps YOLO generalize on limited datasets
-    # TODO: Add blur so detects the ball in motion
     AUGMENTATION = {
         #color and light
         'hsv_h': 0.015,     # HSV-Hue adjustment
         'hsv_s': 0.7,       # HSV-Saturation adjustment
         'hsv_v': 0.4,       # HSV-Value adjustment
         #geometry and position
-        'degrees': 5.0,    # Rotation (+/- deg)
+        'degrees': 5.0,     # Rotation (+/- deg)
         'translate': 0.1,   # Translation (+/- fraction)
-        'scale': 0.4,       # Scale gain (+/- gain)
+        'scale': 0.5,       # Scale gain (+/- gain)
         'shear': 1.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-        'mosaic': 1.0,      # Mosaic (Probability)
-        'mixup': 0.05,       # Mixup (Probability) - Helps with player overlap
+        'mosaic': 0.7,      # Mosaic (Probability)
+        'mixup': 0.05,      # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
         'erasing': 0.2,     # Random erasing (Probability) - Simulates occlusion
-        'auto_augment': 'randaugment', # Use RandAugment policy
+        'auto_augment': 'augmix', # Use RandAugment policy
     }
 
 # ==============================================================================

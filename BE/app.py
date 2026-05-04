@@ -285,7 +285,7 @@ class GameStats:
             self._last_shooter_id = track_id
             if track_id is not None:
                 self._get_player(track_id).shots_attempted += 1
-                print(f"   🏀  Shot registered → Player #{track_id}")
+                print(f"🏀  Shot registered → Player #{track_id}")
             return True
         return False
 
@@ -298,7 +298,7 @@ class GameStats:
                 self.last_shot_frame = frame_idx
                 if self._last_shooter_id is not None:
                     self._get_player(self._last_shooter_id).shots_attempted += 1
-                    print(f"   ⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
+                    print(f"⚠️   Basket detected without shot. Auto-added shot.   ⚠️")
 
             self.baskets_made += 1
             self.last_basket_frame = frame_idx
@@ -306,7 +306,7 @@ class GameStats:
 
             if self.shots_attempted < self.baskets_made:
                 self.shots_attempted = self.baskets_made
-                print(f"   ⚠️   Shots < baskets correction applied.   ⚠️")
+                print(f"⚠️   Shots < baskets correction applied.   ⚠️")
 
             # Credit the basket to the last known shooter
             if self._last_shooter_id is not None:
@@ -314,7 +314,7 @@ class GameStats:
                 # Guard: baskets can't exceed shots for this player either
                 if ps.baskets_made < ps.shots_attempted:
                     ps.baskets_made += 1
-                    print(f"   ✅  Basket credited → Player #{self._last_shooter_id}")
+                    print(f"✅  Basket credited → Player #{self._last_shooter_id}")
 
             self.animation_frames.clear()
             for i in range(self.anim_duration_frames):
@@ -813,6 +813,22 @@ class VideoProcessor:
                 # --- CLEAN SEPARATORS ---
                 cv2.line(final_frame, (w, 0), (w, FINAL_H), (255,255,255), 2)
                 cv2.line(final_frame, (w, STATS_H), (FINAL_W, STATS_H), (255,255,255), 2)
+
+                # --- BETA DISCLAIMER (top-left corner) ---
+                disclaimer_text = "TEST VIDEO"
+                disclaimer_font = cv2.FONT_HERSHEY_SIMPLEX
+                disclaimer_scale = 0.55
+                disclaimer_thickness = 1
+                (dw, dh), dbaseline = cv2.getTextSize(disclaimer_text, disclaimer_font, disclaimer_scale, disclaimer_thickness)
+                pad_x, pad_y = 8, 6
+                # Semi-transparent dark background rectangle
+                overlay = final_frame.copy()
+                cv2.rectangle(overlay, (8, 8), (8 + dw + pad_x * 2, 8 + dh + dbaseline + pad_y * 2), (20, 20, 20), -1)
+                cv2.addWeighted(overlay, 0.65, final_frame, 0.35, 0, final_frame)
+                # Amber text
+                cv2.putText(final_frame, disclaimer_text,
+                            (8 + pad_x, 8 + pad_y + dh),
+                            disclaimer_font, disclaimer_scale, (0, 180, 255), disclaimer_thickness, cv2.LINE_AA)
 
                 # --- WRITE ---
                 writer.write(final_frame)

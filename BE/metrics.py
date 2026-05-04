@@ -54,15 +54,40 @@ class TrainingAnalyzer:
         train_loss_final = self.df['train/box_loss'].iloc[-1]
         val_loss_final   = self.df['val/box_loss'].iloc[-1]
         # Ratio > 1 means val loss is higher than train loss (overfitting signal).
-        # Ratio < 1 would be unusual but indicates val < train (underfitting / regularisation artefact).
+        # Ratio < 1 would be unusual but indicates val < train (possible underfitting artefact).
         overfit_ratio = val_loss_final / train_loss_final if train_loss_final > 0 else 1.0
-
-        # Underfitting heuristic: if val loss never dropped below this threshold
-        # the model has likely not learned enough signal from the data.
-        MIN_ACCEPTABLE_VAL_LOSS = 2.0
 
         # Epoch at which val loss was lowest (best generalisation point)
         best_val_epoch = int(self.df['val/box_loss'].idxmin()) + 1
+
+        # ── Underfitting detection (multi-criteria) ──────────────────────────
+        # Criterion 1 – absolute: val loss never dropped to a healthy level
+        MIN_ACCEPTABLE_VAL_LOSS = 2.0
+        abs_underfit = self.df['val/box_loss'].min() > MIN_ACCEPTABLE_VAL_LOSS
+
+        # Criterion 2 – relative: val loss at the end is still in the top 30 %
+        # of its total range (i.e. has not converged meaningfully)
+        val_series  = self.df['val/box_loss']
+        val_range   = val_series.max() - val_series.min() + 1e-9
+        rel_underfit = val_loss_final > (val_series.min() + 0.30 * val_range)
+
+        # Criterion 3 – mAP never reached a minimal acceptable level
+        map_underfit = self.df['metrics/mAP50(B)'].max() < 0.30
+
+        # Flag underfitting when at least 2 of the 3 criteria are met
+        is_underfitting = sum([abs_underfit, rel_underfit, map_underfit]) >= 2
+
+        # ── Overfitting detection (multi-criteria) ───────────────────────────
+        # Already covered by overfit_ratio, but also check if val loss *rose*
+        # while train loss kept falling in the second half of training
+        n = len(self.df)
+        second_half = slice(n // 2, n)
+        train_trend = (self.df['train/box_loss'].iloc[second_half].iloc[-1] -
+                       self.df['train/box_loss'].iloc[second_half].iloc[0])
+        val_trend   = (self.df['val/box_loss'].iloc[second_half].iloc[-1] -
+                       self.df['val/box_loss'].iloc[second_half].iloc[0])
+        # Diverging trends: train still falling, val rising → overfit
+        diverging_trends = (train_trend < -0.05) and (val_trend > 0.05)
 
         summary = {
             'total_epochs': len(self.df),
@@ -79,8 +104,14 @@ class TrainingAnalyzer:
             'best_val_epoch': best_val_epoch,
             # > 1.15 → mild overfit; > 1.30 → clear overfit
             'overfit_ratio': overfit_ratio,
-            # val loss never reached a healthy level → underfitting
-            'is_underfitting': self.df['val/box_loss'].min() > MIN_ACCEPTABLE_VAL_LOSS,
+            'diverging_trends': diverging_trends,
+            # multi-criteria underfitting flag
+            'is_underfitting': is_underfitting,
+            'underfit_criteria': {
+                'abs_val_loss_too_high': abs_underfit,
+                'val_loss_not_converged': rel_underfit,
+                'map_too_low': map_underfit,
+            },
         }
         return summary
     
@@ -110,14 +141,20 @@ class TrainingAnalyzer:
         print(f"   • Best Val Loss:      {summary['min_val_box_loss']:.4f}  (epoch {summary['best_val_epoch']})")
         print()
         overfit_ratio = summary['overfit_ratio']
-        if overfit_ratio > 1.30:
-            fit_label = "⚠️  OVERFITTING  (val/train loss ratio {:.2f})".format(overfit_ratio)
+        diverging     = summary.get('diverging_trends', False)
+
+        if overfit_ratio > 1.30 or diverging:
+            fit_label = "🔴 OVERFITTING  — val/train loss ratio {:.2f}{}".format(
+                overfit_ratio, " + diverging trends detected" if diverging else "")
         elif overfit_ratio > 1.15:
-            fit_label = "🟡 MILD OVERFIT  (val/train loss ratio {:.2f})".format(overfit_ratio)
+            fit_label = "🟡 MILD OVERFIT  — val/train loss ratio {:.2f}{}".format(
+                overfit_ratio, " + diverging trends detected" if diverging else "")
         elif summary['is_underfitting']:
-            fit_label = "🔵 UNDERFITTING  (val loss never reached a healthy level)"
+            criteria = summary.get('underfit_criteria', {})
+            active   = [k for k, v in criteria.items() if v]
+            fit_label = "🔵 UNDERFITTING  — criteria triggered: {}".format(", ".join(active))
         else:
-            fit_label = "✅ GOOD FIT       (val/train loss ratio {:.2f})".format(overfit_ratio)
+            fit_label = "✅ GOOD FIT      — val/train loss ratio {:.2f}".format(overfit_ratio)
         print(f"🩺 FIT DIAGNOSIS: {fit_label}")
         print("="*70 + "\n")
         
@@ -129,47 +166,71 @@ class TrainingAnalyzer:
             return
             
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-        fig.suptitle('Training History & Performance Metrics', fontsize=16, fontweight='bold')
-        
-        # 1. Loss Curves
+        fig.suptitle('Training History — Loss, Metrics & Fit Quality', fontsize=16, fontweight='bold')
+
+        epochs = self.df.index + 1
+        best_val_idx  = int(self.df['val/box_loss'].idxmin()) + 1
+        best_map_idx  = int(self.df['metrics/mAP50-95(B)'].idxmax()) + 1
+
+        # 1. Loss Curves — with fit-zone annotation
         ax = axes[0, 0]
-        ax.plot(self.df.index + 1, self.df['train/box_loss'], label='Train Box Loss', linewidth=2)
-        ax.plot(self.df.index + 1, self.df['val/box_loss'], label='Val Box Loss', linewidth=2)
+        train_loss = self.df['train/box_loss']
+        val_loss   = self.df['val/box_loss']
+        ax.plot(epochs, train_loss, label='Train Box Loss', linewidth=2, color='steelblue')
+        ax.plot(epochs, val_loss,   label='Val Box Loss',   linewidth=2, color='tomato')
+        ax.fill_between(epochs, train_loss, val_loss,
+                        where=(val_loss > train_loss * 1.15),
+                        alpha=0.15, color='red', label='Overfit zone (val > 1.15× train)')
+        ax.fill_between(epochs, train_loss, val_loss,
+                        where=(val_loss <= train_loss * 1.15),
+                        alpha=0.10, color='green', label='Good-fit zone')
+        ax.axvline(x=best_val_idx, color='purple', linestyle='--', alpha=0.7,
+                   label=f'Best val epoch ({best_val_idx})')
         ax.set_xlabel('Epoch')
-        ax.set_ylabel('Loss')
-        ax.set_title('Box Loss Progression')
-        ax.legend()
+        ax.set_ylabel('Box Loss')
+        ax.set_title('Train vs Val Box Loss\n(red shading = overfitting zone)')
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
-        
-        # 2. mAP Curves
+
+        # 2. mAP Curves — annotate best epoch
         ax = axes[0, 1]
-        ax.plot(self.df.index + 1, self.df['metrics/mAP50(B)'], label='mAP@50', linewidth=2, marker='o', markersize=3)
-        ax.plot(self.df.index + 1, self.df['metrics/mAP50-95(B)'], label='mAP@50-95', linewidth=2, marker='s', markersize=3)
+        ax.plot(epochs, self.df['metrics/mAP50(B)'],    label='mAP@50',    linewidth=2, marker='o', markersize=3)
+        ax.plot(epochs, self.df['metrics/mAP50-95(B)'], label='mAP@50-95', linewidth=2, marker='s', markersize=3)
+        ax.axvline(x=best_map_idx, color='purple', linestyle='--', alpha=0.7,
+                   label=f'Best mAP epoch ({best_map_idx})')
+        ax.axhline(y=0.30, color='orange', linestyle=':', alpha=0.6, label='Underfit threshold (0.30)')
         ax.set_xlabel('Epoch')
         ax.set_ylabel('mAP')
-        ax.set_title('Mean Average Precision')
-        ax.legend()
+        ax.set_title('Mean Average Precision\n(below 0.30 mAP@50-95 → underfitting risk)')
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
-        
+
         # 3. Precision & Recall
         ax = axes[1, 0]
-        ax.plot(self.df.index + 1, self.df['metrics/precision(B)'], label='Precision', linewidth=2, marker='o', markersize=3)
-        ax.plot(self.df.index + 1, self.df['metrics/recall(B)'], label='Recall', linewidth=2, marker='s', markersize=3)
+        ax.plot(epochs, self.df['metrics/precision(B)'], label='Precision', linewidth=2, marker='o', markersize=3)
+        ax.plot(epochs, self.df['metrics/recall(B)'],    label='Recall',    linewidth=2, marker='s', markersize=3)
+        ax.axhline(y=0.50, color='orange', linestyle=':', alpha=0.6, label='Underfit threshold (0.50)')
         ax.set_xlabel('Epoch')
         ax.set_ylabel('Score')
-        ax.set_title('Precision vs Recall')
-        ax.legend()
+        ax.set_title('Precision & Recall Over Training\n(both should exceed 0.50 for healthy fit)')
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
         ax.set_ylim([0, 1])
-        
+
         # 4. Classification Loss
         ax = axes[1, 1]
-        ax.plot(self.df.index + 1, self.df['train/cls_loss'], label='Train Class Loss', linewidth=2)
-        ax.plot(self.df.index + 1, self.df['val/cls_loss'], label='Val Class Loss', linewidth=2)
+        ax.plot(epochs, self.df['train/cls_loss'], label='Train Class Loss', linewidth=2, color='steelblue')
+        ax.plot(epochs, self.df['val/cls_loss'],   label='Val Class Loss',   linewidth=2, color='tomato')
+        ax.fill_between(epochs,
+                        self.df['train/cls_loss'], self.df['val/cls_loss'],
+                        where=(self.df['val/cls_loss'] > self.df['train/cls_loss'] * 1.15),
+                        alpha=0.15, color='red', label='Overfit zone')
+        ax.axvline(x=best_val_idx, color='purple', linestyle='--', alpha=0.7,
+                   label=f'Best val epoch ({best_val_idx})')
         ax.set_xlabel('Epoch')
-        ax.set_ylabel('Loss')
-        ax.set_title('Classification Loss')
-        ax.legend()
+        ax.set_ylabel('Classification Loss')
+        ax.set_title('Train vs Val Classification Loss\n(divergence = class-level overfitting)')
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
         
         plt.tight_layout()
@@ -194,57 +255,86 @@ class TrainingAnalyzer:
 
         # ── Panel 1: Train vs Val Loss Gap ──────────────────────────────────
         ax = axes[0]
-        ax.fill_between(epochs, train_loss, val_loss, alpha=0.25,
-                        color='red', label='Train-Val Gap')
-        ax.plot(epochs, train_loss, label='Train Loss', linewidth=2)
-        ax.plot(epochs, val_loss,   label='Val Loss',   linewidth=2)
+        ax.fill_between(epochs, train_loss, val_loss,
+                        where=(val_loss > train_loss), alpha=0.20, color='red',
+                        label='Overfit gap (val > train)')
+        ax.fill_between(epochs, train_loss, val_loss,
+                        where=(val_loss <= train_loss), alpha=0.15, color='royalblue',
+                        label='Underfit gap (val ≤ train)')
+        ax.plot(epochs, train_loss, label='Train Loss', linewidth=2, color='steelblue')
+        ax.plot(epochs, val_loss,   label='Val Loss',   linewidth=2, color='tomato')
         # Mark the best-val-loss epoch
         best_idx = int(self.df['val/box_loss'].idxmin())
-        ax.axvline(x=best_idx + 1, color='purple', linestyle='--', alpha=0.6,
+        ax.axvline(x=best_idx + 1, color='purple', linestyle='--', alpha=0.7,
                    label=f'Best Val Epoch ({best_idx + 1})')
         ax.set_xlabel('Epoch')
         ax.set_ylabel('Box Loss')
-        ax.set_title('Train vs Validation Loss Gap')
-        ax.legend()
+        ax.set_title('Train vs Validation Loss\n(red = overfit gap, blue = underfit gap)')
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
 
-        # ── Panel 2: Overfitting Score ───────────────────────────────────────
+        # ── Panel 2: Signed Fit Score ────────────────────────────────────────
+        # Positive score  → val loss > train loss → overfitting tendency
+        # Negative score  → val loss < train loss → unusual / possible underfitting
+        # Near-zero score → good generalisation
         ax = axes[1]
-        overfit_score = (gap / np.where(train_loss > 0, train_loss, 1) * 100).clip(-100, 100)
-        colors = ['green' if abs(x) < 10 else 'orange' if abs(x) < 20 else 'red'
-                  for x in overfit_score]
-        ax.bar(epochs, overfit_score, color=colors, alpha=0.7)
-        ax.axhline(y=10, color='g',      linestyle='--', label='Good (<10%)',     alpha=0.7)
-        ax.axhline(y=20, color='orange', linestyle='--', label='Moderate (<20%)', alpha=0.7)
-        ax.axhline(y=30, color='red',    linestyle='--', label='Overfit (≥30%)',  alpha=0.7)
+        signed_score = ((val_loss - train_loss) / np.where(train_loss > 0, train_loss, 1) * 100)
+        bar_colors = []
+        for s in signed_score:
+            if s < -5:
+                bar_colors.append('royalblue')   # underfitting / unusual
+            elif s <= 10:
+                bar_colors.append('green')        # good fit
+            elif s <= 20:
+                bar_colors.append('orange')       # mild overfit
+            else:
+                bar_colors.append('red')          # clear overfit
+        ax.bar(epochs, signed_score, color=bar_colors, alpha=0.75)
+        ax.axhline(y=0,   color='grey',   linestyle='-',  linewidth=0.8, alpha=0.5)
+        ax.axhline(y=-5,  color='royalblue', linestyle='--', alpha=0.7,
+                   label='Underfit boundary (< −5 %)')
+        ax.axhline(y=10,  color='green',  linestyle='--', alpha=0.7,
+                   label='Good-fit ceiling (≤ 10 %)')
+        ax.axhline(y=20,  color='orange', linestyle='--', alpha=0.7,
+                   label='Mild-overfit ceiling (≤ 20 %)')
+        ax.axhline(y=30,  color='red',    linestyle='--', alpha=0.7,
+                   label='Clear overfit (> 30 %)')
         ax.set_xlabel('Epoch')
-        ax.set_ylabel('Overfitting Score (%)')
-        ax.set_title('Overfitting & Underfitting Progression')
-        ax.legend(fontsize=8)
+        ax.set_ylabel('Fit Score  [(val − train) / train × 100 %]')
+        ax.set_title('Signed Fit Score per Epoch\n'
+                     '(negative = underfit risk, positive = overfit risk)')
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3, axis='y')
 
         # ── Panel 3: Fit-Quality Timeline ────────────────────────────────────
-        # Zone classification per epoch:
-        #   UNDERFIT  → val_loss is still very high (top 40 % of its range)
-        #   OVERFIT   → overfit_score ≥ 20
+        # Per-epoch zone classification:
+        #   UNDERFIT  → val_loss still in top 40 % of its range AND epoch < 60 % of total
+        #               OR signed_score < −5
+        #   OVERFIT   → signed_score ≥ 15 (≈ OVERFIT_RATIO_WARN − 1 converted to %)
         #   GOOD FIT  → everything else
         ax = axes[2]
-        val_range   = val_loss.max() - val_loss.min() + 1e-9
-        underfit_mask = val_loss > (val_loss.min() + 0.40 * val_range)
-        overfit_mask  = overfit_score >= 20
-        good_mask     = ~underfit_mask & ~overfit_mask
+        val_range_     = val_loss.max() - val_loss.min() + 1e-9
+        n_ep           = len(epochs)
+        early_epochs   = epochs <= (n_ep * 0.60)           # first 60 % of training
+        high_val_loss  = val_loss > (val_loss.min() + 0.40 * val_range_)
+        underfit_mask  = (high_val_loss & early_epochs) | (signed_score < -5)
+        overfit_mask   = signed_score >= 15
+        good_mask      = ~underfit_mask & ~overfit_mask
 
         ax.scatter(epochs[underfit_mask], val_loss[underfit_mask],
-                   color='royalblue', label='Underfitting', zorder=3, s=30)
+                   color='royalblue', label=f'Underfitting ({underfit_mask.sum()} ep)', zorder=3, s=35)
         ax.scatter(epochs[good_mask],     val_loss[good_mask],
-                   color='green',     label='Good Fit',     zorder=3, s=30)
+                   color='green',     label=f'Good Fit ({good_mask.sum()} ep)',         zorder=3, s=35)
         ax.scatter(epochs[overfit_mask],  val_loss[overfit_mask],
-                   color='red',       label='Overfitting',  zorder=3, s=30)
+                   color='red',       label=f'Overfitting ({overfit_mask.sum()} ep)',   zorder=3, s=35)
         ax.plot(epochs, val_loss, color='grey', linewidth=1, alpha=0.4)
+        ax.axvline(x=best_idx + 1, color='purple', linestyle='--', alpha=0.6,
+                   label=f'Best val epoch ({best_idx + 1})')
         ax.set_xlabel('Epoch')
         ax.set_ylabel('Val Box Loss')
-        ax.set_title('Fit-Quality Timeline')
-        ax.legend(fontsize=8)
+        ax.set_title('Fit-Quality Timeline\n'
+                     '(blue = underfit, green = good, red = overfit)')
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
 
         plt.tight_layout()
@@ -369,12 +459,11 @@ class ModelEvaluator:
             ax.grid(True, alpha=0.3, axis='y')
             plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
         
-        # It is not detecting the map50 per class
-
-        # plt.tight_layout()
-        # save_path = MetricsConfig.OUTPUT_DIR / 'validation_results.png'
-        # plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        # print(f"✅ Saved: {save_path}")
+        # It is not detecting the map50 per class — add a fallback note on the plot
+        plt.tight_layout()
+        save_path = MetricsConfig.OUTPUT_DIR / 'validation_results.png'
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✅ Saved: {save_path}")
         plt.close()
 
 # ==============================================================================
@@ -448,9 +537,11 @@ Final Loss: {s['final_val_box_loss']:.4f}
 
         # ── Underfitting ────────────────────────────────────────────────────
         if s.get('is_underfitting'):
+            criteria = s.get('underfit_criteria', {})
+            active   = [k.replace('_', ' ') for k, v in criteria.items() if v]
             weaknesses.append(
-                f"🔵 Underfitting detected: val loss never reached a healthy level "
-                f"(min val box loss = {s['min_val_box_loss']:.4f}). "
+                f"🔵 Underfitting detected (criteria: {', '.join(active)}). "
+                f"Min val box loss = {s['min_val_box_loss']:.4f}. "
                 "The model has not learned enough from the data."
             )
 
@@ -458,13 +549,20 @@ Final Loss: {s['final_val_box_loss']:.4f}
         overfit_ratio = s.get('overfit_ratio', 1.0)
         if overfit_ratio > 1.30:
             weaknesses.append(
-                f"⚠️  Overfitting detected: val/train loss ratio = {overfit_ratio:.2f}. "
+                f"🔴 Overfitting detected: val/train loss ratio = {overfit_ratio:.2f}. "
                 "Validation loss is significantly higher than training loss."
             )
         elif overfit_ratio > 1.15:
             weaknesses.append(
                 f"🟡 Mild overfitting: val/train loss ratio = {overfit_ratio:.2f}. "
                 "Monitor closely — generalisation may degrade further."
+            )
+
+        # ── Diverging loss trends ────────────────────────────────────────────
+        if s.get('diverging_trends'):
+            weaknesses.append(
+                "📈 Diverging loss trends in the second half of training: "
+                "train loss still decreasing while val loss rises — classic overfit signal."
             )
 
         # ── Early stopping missed? ───────────────────────────────────────────
@@ -476,27 +574,24 @@ Final Loss: {s['final_val_box_loss']:.4f}
                 f"validation epoch ({best_val_ep}). Consider using early stopping."
             )
 
-        # ── Metric-based weaknesses (existing logic) ─────────────────────────
+        # ── Metric-based weaknesses ──────────────────────────────────────────
         if s['best_map5095'] < 0.3:
             weaknesses.append(
-                f"⚠️  Low mAP@50-95: {s['best_map5095']:.4f} - "
+                f"⚠️  Low mAP@50-95: {s['best_map5095']:.4f} — "
                 "consider more training epochs or dataset augmentation"
             )
         if s['best_recall'] < 0.5:
             weaknesses.append(
-                f"⚠️  Low recall: {s['best_recall']:.4f} - "
+                f"⚠️  Low recall: {s['best_recall']:.4f} — "
                 "model misses many objects; try higher IoU threshold adjustments"
             )
         if s['best_precision'] < 0.5:
             weaknesses.append(
-                f"⚠️  Low precision: {s['best_precision']:.4f} - "
+                f"⚠️  Low precision: {s['best_precision']:.4f} — "
                 "too many false positives; model may need refinement"
             )
-        if s['final_val_box_loss'] > 2.0:
-            weaknesses.append(
-                f"⚠️  High validation loss: {s['final_val_box_loss']:.4f} - "
-                "model may be underfitting"
-            )
+        # NOTE: high val_loss > 2.0 is now covered by is_underfitting above;
+        # no duplicate check needed here.
 
         return weaknesses if weaknesses else ["No major weaknesses detected"]
     
@@ -507,16 +602,21 @@ Final Loss: {s['final_val_box_loss']:.4f}
 
         # ── Overfitting recommendations ──────────────────────────────────────
         overfit_ratio = s.get('overfit_ratio', 1.0)
-        if overfit_ratio > 1.15:
+        diverging     = s.get('diverging_trends', False)
+        if overfit_ratio > 1.15 or diverging:
             recommendations.append("🛡️  Add / increase regularisation: weight decay, dropout layers, or label smoothing")
             recommendations.append("🔄 Expand training data or apply stronger augmentation (mosaic, mixup, colour jitter)")
             recommendations.append("⏹️  Enable early stopping (patience=20) to stop at the best validation epoch")
-            if overfit_ratio > 1.30:
+            if overfit_ratio > 1.30 or diverging:
                 recommendations.append("📉 Reduce model capacity — try a smaller YOLO variant (e.g. yolo11n) if dataset is small")
 
         # ── Underfitting recommendations ─────────────────────────────────────
         if s.get('is_underfitting'):
-            recommendations.append("📈 Train for more epochs — the model has not yet converged")
+            criteria = s.get('underfit_criteria', {})
+            active   = [k for k, v in criteria.items() if v]
+            recommendations.append(
+                f"📈 Train for more epochs — underfitting criteria active: {', '.join(active)}"
+            )
             recommendations.append("🔧 Increase learning rate or use a warm-up + cosine decay schedule")
             recommendations.append("📦 Verify dataset quality — check for mislabelled images or class imbalance")
             recommendations.append("🏗️  Increase model capacity — try a larger YOLO variant (e.g. yolo11m/l)")
@@ -530,11 +630,11 @@ Final Loss: {s['final_val_box_loss']:.4f}
                 "continuing training past the generalisation peak"
             )
 
-        # ── Metric-based recommendations (existing logic) ────────────────────
-        if s['best_map5095'] < 0.4:
-            recommendations.append("📈 Increase training epochs for better convergence")
-            recommendations.append("🔄 Apply stronger data augmentation (rotation, brightness)")
-            recommendations.append("📊 Ensure dataset quality - check for mislabeled images")
+        # ── Metric-based recommendations ─────────────────────────────────────
+        if s['best_map5095'] < 0.4 and not s.get('is_underfitting'):
+            # Only add generic epoch rec if not already covered by underfit block
+            recommendations.append("🔄 Apply stronger data augmentation (rotation, brightness, scale)")
+            recommendations.append("📊 Ensure dataset quality — check for mislabeled images")
 
         if s['best_recall'] < 0.6:
             recommendations.append("🎯 Reduce confidence threshold in inference for higher recall")
@@ -606,30 +706,39 @@ class FitDiagnostics:
         self.df = df
 
     def _classify_epochs(self):
-        """Return arrays of per-epoch labels and scores."""
+        """Return arrays of per-epoch labels and signed fit scores."""
         train = self.df['train/box_loss'].values
         val   = self.df['val/box_loss'].values
         val_min, val_max = val.min(), val.max()
         val_range = val_max - val_min + 1e-9
+        n = len(train)
 
-        overfit_score = ((val - train) / np.where(train > 0, train, 1) * 100).clip(0, 100)
-        underfit_mask = val > (val_min + self.UNDERFIT_VAL_FRAC * val_range)
-        overfit_mask  = overfit_score >= (self.OVERFIT_RATIO_WARN - 1) * 100
+        # Signed score: positive → overfit tendency, negative → underfit / unusual
+        signed_score = ((val - train) / np.where(train > 0, train, 1) * 100)
+
+        # Underfit: high val loss in the EARLY phase of training
+        # OR signed score is unusually negative (val < train by >5 %)
+        early_phase   = np.arange(n) < int(n * 0.60)
+        high_val_loss = val > (val_min + self.UNDERFIT_VAL_FRAC * val_range)
+        underfit_mask = (high_val_loss & early_phase) | (signed_score < -5)
+
+        # Overfit: positive signed score exceeds mild-overfit threshold
+        overfit_mask = signed_score >= (self.OVERFIT_RATIO_WARN - 1) * 100
 
         labels = []
         for u, o in zip(underfit_mask, overfit_mask):
-            if u:
+            if u and not o:
                 labels.append('underfit')
             elif o:
                 labels.append('overfit')
             else:
                 labels.append('good')
 
-        return np.array(labels), overfit_score
+        return np.array(labels), signed_score
 
     def print_fit_report(self):
         """Print a detailed, epoch-level fit-quality report."""
-        labels, overfit_score = self._classify_epochs()
+        labels, signed_score = self._classify_epochs()
         epochs = self.df.index + 1
         train  = self.df['train/box_loss'].values
         val    = self.df['val/box_loss'].values
@@ -644,21 +753,34 @@ class FitDiagnostics:
         epochs_after = total - best_val_idx - 1
         early_stop_warning = epochs_after >= self.EARLY_STOP_PATIENCE
 
+        # ── Diverging trend check (second half) ─────────────────────────────
+        second_half = slice(total // 2, total)
+        train_trend = train[second_half][-1] - train[second_half][0]
+        val_trend   = val[second_half][-1]   - val[second_half][0]
+        diverging   = (train_trend < -0.05) and (val_trend > 0.05)
+
         # ── Overall verdict ──────────────────────────────────────────────────
         final_ratio = val[-1] / train[-1] if train[-1] > 0 else 1.0
-        if n_underfit / total > 0.5:
-            verdict = "🔵 UNDERFITTING  — the model needs more capacity or epochs"
-        elif final_ratio > self.OVERFIT_RATIO_CRIT:
-            verdict = f"🔴 OVERFITTING   — val/train ratio {final_ratio:.2f} is too high"
+        underfit_dominant = n_underfit / total > 0.5
+        overfit_dominant  = final_ratio > self.OVERFIT_RATIO_CRIT or diverging
+
+        if underfit_dominant and not (final_ratio > self.OVERFIT_RATIO_WARN):
+            verdict = "🔵 UNDERFITTING   — model needs more capacity or training epochs"
+        elif final_ratio > self.OVERFIT_RATIO_CRIT or (diverging and final_ratio > self.OVERFIT_RATIO_WARN):
+            verdict = f"🔴 OVERFITTING    — val/train ratio {final_ratio:.2f}" + \
+                      (" + diverging loss trends" if diverging else "")
         elif final_ratio > self.OVERFIT_RATIO_WARN:
-            verdict = f"🟡 MILD OVERFIT  — val/train ratio {final_ratio:.2f}, watch closely"
+            verdict = f"🟡 MILD OVERFIT   — val/train ratio {final_ratio:.2f}, watch closely"
         else:
-            verdict = f"✅ GOOD FIT      — val/train ratio {final_ratio:.2f}"
+            verdict = f"✅ GOOD FIT       — val/train ratio {final_ratio:.2f}"
 
         print("\n" + "="*70)
         print("🩺 FIT DIAGNOSTICS REPORT")
         print("="*70)
         print(f"\n  Overall verdict : {verdict}")
+        if diverging:
+            print(f"  ⚠️  Diverging trends in 2nd half: train Δ={train_trend:+.4f}, "
+                  f"val Δ={val_trend:+.4f} — classic overfitting pattern")
         print(f"\n  Epoch breakdown ({total} total):")
         print(f"    🔵 Underfitting epochs : {n_underfit:>4}  ({100*n_underfit/total:.0f}%)")
         print(f"    ✅ Good-fit epochs     : {n_good:>4}  ({100*n_good/total:.0f}%)")
@@ -671,14 +793,15 @@ class FitDiagnostics:
                   f"(patience={self.EARLY_STOP_PATIENCE}).")
 
         # ── Per-epoch table (last 10 epochs for brevity) ─────────────────────
-        print(f"\n  Last 10 epochs summary:")
+        print(f"\n  Last 10 epochs summary  (fit score = signed % deviation of val from train):")
         print(f"  {'Epoch':>6}  {'Train Loss':>11}  {'Val Loss':>9}  "
-              f"{'Overfit%':>9}  {'Label':>10}")
-        print("  " + "-"*55)
+              f"{'Fit Score':>10}  {'Label':>10}")
+        print("  " + "-"*57)
         for i in range(max(0, total - 10), total):
             symbol = {'underfit': '🔵', 'good': '✅', 'overfit': '🔴'}[labels[i]]
+            direction = "▲ overfit" if signed_score[i] > 0 else ("▼ underfit" if signed_score[i] < -5 else "  ok")
             print(f"  {epochs[i]:>6}  {train[i]:>11.4f}  {val[i]:>9.4f}  "
-                  f"{overfit_score[i]:>8.1f}%  {symbol} {labels[i]}")
+                  f"{signed_score[i]:>+9.1f}%  {symbol} {labels[i]}")
 
         print("\n" + "="*70 + "\n")
 
