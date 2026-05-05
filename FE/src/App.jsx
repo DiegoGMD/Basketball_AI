@@ -9,7 +9,7 @@ const DEFAULT_THRESHOLDS = {
   1: 0.25,    // Ball in Basket
   2: 0.7,     // Player
   3: 0.7,     // Basket
-  4: 0.77     // Player Shooting
+  4: 0.7     // Player Shooting
 };
 
 const LABELS = {

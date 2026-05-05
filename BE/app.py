@@ -48,11 +48,11 @@ class Config:
 
     # Confidence Thresholds
     THRESHOLDS = {
-        0: 0.3,     # Ball
+        0: 0.6,     # Ball
         1: 0.25,    # Ball in Basket
-        2: 0.5,     # Player
-        3: 0.6,     # Basket
-        4: 0.4      # Player Shooting
+        2: 0.7,     # Player
+        3: 0.7,     # Basket
+        4: 0.7      # Player Shooting
     }
 
     # Colors (BGR Format for OpenCV)
@@ -624,7 +624,6 @@ class VideoProcessor:
         self.mode = mode
         # Use custom thresholds if provided, otherwise use defaults
         self.thresholds = thresholds if thresholds else Config.THRESHOLDS
-        # Track history for motion trails (tracking_test.py integration)
         self.track_history = defaultdict(lambda: [])
         
     def run(self):
