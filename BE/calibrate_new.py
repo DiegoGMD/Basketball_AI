@@ -1,129 +1,118 @@
 # =============================================================================
-#   calibrate.py — B_AI Court Homography Calibration Tool
+#  calibrate.py  —  B_AI Court Homography Calibration Tool
 #
-#   Designed for a camera placed approximately at the CENTRE of the HALF-COURT
-#   LINE, pointing toward the basket end. The tool works for any camera height
-#   (1-4 m) that can see the free-throw box.
+#  Designed for a camera placed approximately at the CENTRE of the HALF-COURT
+#  LINE, pointing toward the basket end.  The tool works for any camera height
+#  (1-4 m) that can see the free-throw box.
 #
 #  COORDINATE SYSTEM — ONE HALF-COURT ONLY:
-#       y = 0    → FAR BASELINE (basket end, top of the video frame)
-#       y = 1400 → HALF-COURT LINE (near end, bottom of the video frame) [FIBA]
-#       x = 0    → LEFT sideline   (left in video frame)
-#       x = 1500 → RIGHT sideline  (right in video frame)              [FIBA]
+#      y = 0    → FAR BASELINE (basket end, top of the video frame)
+#      y = 1400 → HALF-COURT LINE (near end, bottom of the video frame) [FIBA]
+#      x = 0    → LEFT sideline   (left in video frame)
+#      x = 1500 → RIGHT sideline  (right in video frame)              [FIBA]
 #
 #  SCALE REFERENCE:
-#       The X axis is anchored by the SIDELINES (pts 5 & 6, the two far
-#       baseline sideline corners).  All depth (Y) is a fixed FIBA ratio
-#       of that width: HALF_H / COURT_W = 1400 / 1500.
+#      The X axis is anchored by the SIDELINES (pts 5 & 6, the two far
+#      baseline sideline corners).  All depth (Y) is a fixed FIBA ratio
+#      of that width: HALF_H / COURT_W = 1400 / 1500.
 #
-#       The FREE-THROW BOX (pts 1-4) establishes the homography kernel and
-#       is clicked FIRST because it is always fully visible.  The sideline
-#       corners (pts 5-6) then lock the absolute width, from which the
-#       complete half-court scale is derived.  Everything else improves
-#       accuracy in the mid-court and near-camera regions.
+#      The FREE-THROW BOX (pts 1-4) establishes the homography kernel and
+#      is clicked FIRST because it is always fully visible.  The sideline
+#      corners (pts 5-6) then lock the absolute width, from which the
+#      complete half-court scale is derived.  Everything else improves
+#      accuracy in the mid-court and near-camera regions.
 #
-# =============================================================================
+#  ASCII — CAMERA POV (approximately centred on the half-court line):
 #
-#                          baseline
-#    [5]───[7]───────────[1]───────[2]───────────[8]───[6]
-#  L  |     |             |  ─[B]─  |             |     | R
-#     |     |             |         |             |     |
-#  s  |     |             | ······· |             |     | s
-#  i  [10]  |             ··       ··             |  [11] i
-#  d  |?    |            [3]───────[4]            |    ?| d
-#  e  |?     ··           ··       ··           ··     ?| e
-#  l  |??      ···          ·······          ···      ??| l
-#  i  |??         ···                     ···         ??| i
-#  n  |???           ·········[9]·········           ???| n
-#  e  |????                                         ????| e
-#     |???????                                   ???????|
-#     |???????????????                   ???????????????| 
-#     ────────────────────────[C]────────────────────────
-#                   half-court line (y = 1400)
+#                        baseline (y = 0)
+#   [5]──[7]─────[1]──────[B]──────[2]─────[8]──[6]
+#    |    |       |                  |       |    |
+#    |    |       |    free-throw    |       |    |
+#    |    |      [3]────────────────[4]      |    |
+#    |    |        ·               ·         |    |
+#    |    |          ·    3pt    ·           |    |
+#    |    |           ·  arc  ·             |    |
+#    |  [10]           ·[9]·            [11] |   |
+#    |                                       |    |
+#    |  (sidelines visible near camera)      |    |
+#   [C]────────────────[14]──────────────────[C]
+#                  half-court line (y = 1400)
 #
-#       [C] camera location  (centred, at or near the half-court line)
-#       [B] basket
-#       [?] Area not visible ("?" sign is not visible by the camera)
+#     [C] camera location  (centred, at or near the half-court line)
+#     [B] basket
 #
 #  ── QUICK START ──────────────────────────────────────────────────────────
 #
-#   OPTION A — Interactive wizard (for non-FIBA courts):
-#       python calibrate.py --video uploads\sample.mp4 --setup
+#  OPTION A — Interactive wizard (for non-FIBA courts):
+#      python calibrate.py --video uploads\sample.mp4 --setup
 #
-#   OPTION B — FIBA preset (default, no wizard needed):
-#       python calibrate.py --video uploads\sample.mp4
-#       python calibrate.py --video uploads\sample.mp4 --frame 120
-#       python calibrate.py --image sample_frame.jpg
+#  OPTION B — FIBA preset (default, no wizard needed):
+#      python calibrate.py --video uploads\sample.mp4
+#      python calibrate.py --video uploads\sample.mp4 --frame 120
+#      python calibrate.py --image sample_frame.jpg
 #
 #  CONTROLS:
-#       Left-click        → place next REQUIRED point
-#       Right-click       → place/skip next OPTIONAL point
+#      Left-click        → place next REQUIRED point
+#      Right-click       → place/skip next OPTIONAL point
 #                          (right-click same spot a 2nd time to SKIP)
-#       U                 → undo last point
-#       R                 → reset all points
-#       S                 → save + open reprojection preview
-#       P                 → open reprojection preview without saving
-#       Q / ESC           → quit without saving
+#      U                 → undo last point
+#      R                 → reset all points
+#      S                 → save + open reprojection preview
+#      P                 → open reprojection preview without saving
+#      Q / ESC           → quit without saving
 #
-#   ZOOM / PAN:
-#       Scroll wheel      → zoom in / out  (centred on cursor)
-#       Z / X             → zoom in / out  (keyboard alternative)
-#       0                 → reset zoom & pan
-#       Middle-drag       → pan while zoomed in
-#       Arrow keys        → pan while zoomed in
+#  ZOOM / PAN:
+#      Scroll wheel      → zoom in / out  (centred on cursor)
+#      Z / X             → zoom in / out  (keyboard alternative)
+#      0                 → reset zoom & pan
+#      Middle-drag       → pan while zoomed in
+#      Arrow keys        → pan while zoomed in
 #
 # =============================================================================
 #
 #  POINT MAP  — click in this order:
 #
-#                          baseline
-#    [5]───[7]───────────[1]───────[2]───────────[8]───[6]
-#  L  |     |             |  ─[B]─  |             |     | R
-#     |     |             |         |             |     |
-#  s  |     |             | ······· |             |     | s
-#  i  [10]  |             ··       ··             |  [11] i
-#  d  |?    |            [3]───────[4]            |    ?| d
-#  e  |?     ··           ··       ··           ··     ?| e
-#  l  |??      ···          ·······          ···      ??| l
-#  i  |??         ···                     ···         ??| i
-#  n  |???           ·········[9]·········           ???| n
-#  e  |????                                         ????| e
-#     |???????                                   ???????|
-#     |???????????????                   ???????????????| 
-#     ────────────────────────[C]────────────────────────
-#                       half-court line
+#                        baseline
+#   [5]──[7]─────[1]──────────────[2]─────[8]──[6]
+#    |    |       |                |       |    |
+#    |    |       |                |       |    |
+#    |    |      [3]──────────────[4]      |    |
+#    |    |                                |    |
+#    |    |              [9]               |    |
+#  [10]   |                           [11] |    |
+#    |                                          |
+#    ──────────────────[14]─────────────────────
+#                    half-court line
 #
-#   REQUIRED — left-click all 9 in order:
-#       1. Left  FT box x baseline          left paint line meets baseline        	[FT anchor — primary scale]
-#       2. Right FT box x baseline          right paint line meets baseline       	[FT anchor — primary scale]
-#       3. Left  FT line end                left end of the free-throw line       	[FT anchor — primary scale]
-#       4. Right FT line end                right end of the free-throw line      	[FT anchor — primary scale]
-#       5. Left  baseline corner            left sideline meets baseline          	[width anchor — far-left]
-#       6. Right baseline corner            right sideline meets baseline         	[width anchor — far-right]
-#       7. Left  3pt area x baseline        left 3pt line meets baseline          	[inner-left on baseline]
-#       8. Right 3pt area x baseline        right 3pt line meets baseline         	[inner-right on baseline]
-#       9. Top of 3pt arc                   peak of 3pt arc, centred above basket 	[mid-frame, centre]
+#  REQUIRED — left-click all 11 in order:
+#   1. Left  FT box x baseline  ★    left paint line meets baseline        [FT anchor — primary scale]
+#   2. Right FT box x baseline  ★    right paint line meets baseline       [FT anchor — primary scale]
+#   3. Left  FT line end        ★    left end of the free-throw line       [FT anchor — primary scale]
+#   4. Right FT line end        ★    right end of the free-throw line      [FT anchor — primary scale]
+#   5. Left  baseline corner   ◆     left sideline meets baseline          [width anchor — far-left]
+#   6. Right baseline corner   ◆     right sideline meets baseline         [width anchor — far-right]
+#   7. Left  3pt area x baseline     left 3pt line meets baseline          [inner-left on baseline]
+#   8. Right 3pt area x baseline     right 3pt line meets baseline         [inner-right on baseline]
+#   9. Top of 3pt arc                peak of 3pt arc, centred above basket [mid-frame, centre]
+#  10. Left  near sideline  ▲        left sideline visible near the camera [angle anchor — near-left]
+#  11. Right near sideline  ▲        right sideline visible near the camera[angle anchor — near-right]
 #
 #  NOTE:
-#		★ FT box (pts 1-4) — click FIRST and PRECISELY.  These four corners
-#		establish the homography kernel.  The FT box is always fully visible
-#		from a centred camera, so it is the most reliable reference.
+#   ★ FT box (pts 1-4) — click FIRST and PRECISELY.  These four corners
+#     establish the homography kernel.
+#   ◆ Sideline corners (pts 5-6) — lock the far end of the court WIDTH.
+#   ▲ Near sideline pts (10-11) — REQUIRED to fix the sideline ANGLE.
+#     Without both ends of each sideline the homography cannot recover the
+#     correct perspective tilt.  Click where the sideline stripe is clearly
+#     visible closest to the camera (bottom of the frame).
 #
-#		◆ Sideline corners (pts 5-6) — lock the absolute court WIDTH.  The
-#		full half-court depth is derived from the width using the FIBA ratio
-#		HALF_H/COURT_W = 1400/1500.  Click as accurately as possible; these
-#		have the highest weight in the final fit.
+#  OPTIONAL (right-click to place, right-click same spot again to skip):
+#  12. Left  centre-circle edge      left edge of centre circle
+#  13. Right centre-circle edge      right edge of centre circle
+#  14. Half-court centre             midpoint of the half-court line
 #
-#	OPTIONAL (right-click to place, right-click same spot again to skip):
-#		10. Left  sideline frame-cut        where the near left sideline enters frame
-#		11. Right sideline frame-cut		where the near right sideline enters frame
-#		12. Left  centre-circle edge		left edge of centre circle
-#		13. Right centre-circle edge		right edge of centre circle
-#		14. Half-court centre				midpoint of the half-court line
-#
-#	MINIMUM to save:   9 required
-#	Better (centred):  1..11
-#	Full half-court:   1..14
+#  MINIMUM to save:   11 required
+#  Full half-court:   11..14
 #
 # =============================================================================
 
@@ -173,38 +162,33 @@ def _build_reference_pts(court_w, half_h, basket_x, basket_y, r_3pt,
       x : left sideline = 0,  right sideline = court_w
       y : far baseline  = 0,  half-court line = half_h
 
-    Click order is designed so that:
-      1. The FT box corners (pts 1-4) are clicked first — they are always
-         fully visible and establish the homography kernel.
-      2. The baseline sideline corners (pts 5-6) are clicked next — they
-         lock the absolute court WIDTH.  All depth (y axis) is a fixed ratio
-         of that width (HALF_H / COURT_W), so the sidelines define the scale
-         for the entire half-court.
-      3. The 3pt baseline intersections (pts 7-8) and arc top (pt 9) fill in
-         the mid-court geometry for a better global fit.
+    Click order:
+      1. FT box corners (pts 1-4) — always visible, establish the kernel.
+      2. Far baseline sideline corners (pts 5-6) — lock court WIDTH.
+      3. 3pt intersections + arc top (pts 7-9) — mid-court geometry.
+      4. Near sideline points (pts 10-11) — fix the sideline ANGLE.
+         Both ends of each sideline are required; without them the
+         homography cannot recover the correct perspective tilt.
 
-    Returns (required, opt_near, opt_half) as np.float32 arrays.
+    Returns (required, opt_half) as np.float32 arrays.
     """
     val   = max(0.0, r_3pt ** 2 - basket_y ** 2)
-    x3l   = basket_x - math.sqrt(val)   # left  3pt-baseline X
-    x3r   = basket_x + math.sqrt(val)   # right 3pt-baseline X
-    y3top = basket_y + r_3pt            # top of 3pt arc
+    x3l   = basket_x - math.sqrt(val)
+    x3r   = basket_x + math.sqrt(val)
+    y3top = basket_y + r_3pt
 
     required = np.array([
-        [float(paint_l),   0.0          ],   # 1  left  FT box x baseline  ★ primary
-        [float(paint_r),   0.0          ],   # 2  right FT box x baseline  ★ primary
-        [float(paint_l),   float(ft_y)  ],   # 3  left  FT line end        ★ primary
-        [float(paint_r),   float(ft_y)  ],   # 4  right FT line end        ★ primary
-        [0.0,              0.0          ],   # 5  left  baseline corner    ◆ width anchor
-        [float(court_w),   0.0          ],   # 6  right baseline corner    ◆ width anchor
-        [float(x3l),       0.0          ],   # 7  left  3pt x baseline
-        [float(x3r),       0.0          ],   # 8  right 3pt x baseline
-        [float(basket_x),  float(y3top) ],   # 9  top of 3pt arc
-    ], dtype=np.float32)
-
-    opt_near = np.array([
-        [0.0,             float(cam_dist)],  # 10 left  sideline frame-cut
-        [float(court_w),  float(cam_dist)],  # 11 right sideline frame-cut
+        [float(paint_l),   0.0           ],   # 1  left  FT box x baseline  ★
+        [float(paint_r),   0.0           ],   # 2  right FT box x baseline  ★
+        [float(paint_l),   float(ft_y)   ],   # 3  left  FT line end        ★
+        [float(paint_r),   float(ft_y)   ],   # 4  right FT line end        ★
+        [0.0,              0.0           ],   # 5  left  baseline corner    ◆
+        [float(court_w),   0.0           ],   # 6  right baseline corner    ◆
+        [float(x3l),       0.0           ],   # 7  left  3pt x baseline
+        [float(x3r),       0.0           ],   # 8  right 3pt x baseline
+        [float(basket_x),  float(y3top)  ],   # 9  top of 3pt arc
+        [0.0,              float(cam_dist)],  # 10 left  near sideline      ▲
+        [float(court_w),   float(cam_dist)],  # 11 right near sideline      ▲
     ], dtype=np.float32)
 
     opt_half = np.array([
@@ -213,7 +197,7 @@ def _build_reference_pts(court_w, half_h, basket_x, basket_y, r_3pt,
         [float(basket_x),                    float(half_h)],  # 14 half-court centre
     ], dtype=np.float32)
 
-    return required, opt_near, opt_half
+    return required, opt_half
 
 
 # ---------------------------------------------------------------------------
@@ -224,15 +208,13 @@ REQUIRED_LABELS = [
     " 2. RIGHT FT box x baseline  ★  right paint line meets baseline           [FT anchor — click first, precise!]",
     " 3. LEFT  FT line end        ★  left end of the free-throw line           [FT anchor — precise!]",
     " 4. RIGHT FT line end        ★  right end of the free-throw line          [FT anchor — precise!]",
-    " 5. LEFT  baseline corner   ◆   left sideline meets baseline              [width anchor — far-left in image]",
-    " 6. RIGHT baseline corner   ◆   right sideline meets baseline             [width anchor — far-right in image]",
+    " 5. LEFT  baseline corner   ◆   left sideline meets far baseline          [width anchor — far-left in image]",
+    " 6. RIGHT baseline corner   ◆   right sideline meets far baseline         [width anchor — far-right in image]",
     " 7. LEFT  3pt area x baseline   left 3pt line meets baseline              [inner-left on baseline]",
     " 8. RIGHT 3pt area x baseline   right 3pt line meets baseline             [inner-right on baseline]",
     " 9. TOP of 3pt area             peak of the 3pt arc, centred above basket [mid-frame, centre]",
-]
-OPT_NEAR_LABELS = [
-    "10. LEFT  sideline frame-cut    where near left sideline enters the frame  [skip if off-camera]",
-    "11. RIGHT sideline frame-cut    where near right sideline enters the frame [skip if off-camera]",
+    "10. LEFT  near sideline     ▲   left sideline stripe near the camera      [angle anchor — near-left]",
+    "11. RIGHT near sideline     ▲   right sideline stripe near the camera     [angle anchor — near-right]",
 ]
 OPT_HALF_LABELS = [
     "12. LEFT  centre-circle edge    left edge of the centre circle             [skip if off-camera]",
@@ -240,10 +222,9 @@ OPT_HALF_LABELS = [
     "14. HALF-COURT centre           midpoint of the half-court line            [skip if off-camera]",
 ]
 
-NUM_REQUIRED = 9
-NUM_OPT_NEAR = 2
+NUM_REQUIRED = 11
 NUM_OPT_HALF = 3
-NUM_OPTIONAL = NUM_OPT_NEAR + NUM_OPT_HALF   # 5
+NUM_OPTIONAL = NUM_OPT_HALF
 
 HOMOGRAPHY_OUTPUT_PATH = Path(__file__).parent / "tracker" / "homography.npy"
 PROJECTION_OUTPUT_PATH = Path(__file__).parent / "tracker" / "reprojection_preview.png"
@@ -268,7 +249,6 @@ optional_pts: list              = []   # [x,y] or None per optional slot
 base_img:     np.ndarray | None = None
 display_img:  np.ndarray | None = None
 REF_REQUIRED: np.ndarray | None = None
-REF_OPT_NEAR: np.ndarray | None = None
 REF_OPT_HALF: np.ndarray | None = None
 _pending_opt: list | None       = None
 COURT_BASKET_Y_CM: float | None = None
@@ -340,21 +320,16 @@ def _reset_zoom():
 
 
 def _opt_info(flat_idx: int) -> tuple[str, tuple, np.ndarray | None]:
-    if flat_idx < NUM_OPT_NEAR:
-        return (OPT_NEAR_LABELS[flat_idx], C_OPT_NEAR,
-                REF_OPT_NEAR[flat_idx] if REF_OPT_NEAR is not None else None)
-    else:
-        i = flat_idx - NUM_OPT_NEAR
-        return (OPT_HALF_LABELS[i], C_OPT_HALF,
-                REF_OPT_HALF[i] if REF_OPT_HALF is not None else None)
+    return (OPT_HALF_LABELS[flat_idx], C_OPT_HALF,
+            REF_OPT_HALF[flat_idx] if REF_OPT_HALF is not None else None)
 
 
 def _hint_color(flat_idx: int) -> tuple:
-    return H_OPT_NEAR if flat_idx < NUM_OPT_NEAR else H_OPT_HALF
+    return C_OPT_HALF
 
 
 def _group_name(flat_idx: int) -> str:
-    return "10/11 (near sideline)" if flat_idx < NUM_OPT_NEAR else "12/13/14 (half-court)"
+    return "12/13/14 (half-court / centre-circle)"
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +342,7 @@ def _draw_box_marker(img: np.ndarray, pt: tuple, color: tuple, size: int = 7):
     cv2.rectangle(img, (x-size,   y-size),   (x+size,   y+size),   color,   -1)
 
 
-_BOX_REQ_IDX = {4, 5}   # pts 5 & 6 (baseline sideline corners) → square marker
+_BOX_REQ_IDX = {4, 5, 9, 10}   # far & near sideline corners → square marker
 
 
 # ---------------------------------------------------------------------------
@@ -396,21 +371,16 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
         if pt is None:
             continue
         lbl, c, _ = _opt_info(i)
-        if i < NUM_OPT_NEAR:
-            _draw_box_marker(img, tuple(pt), c, size=7)
-        else:
-            cv2.circle(img, tuple(pt), 9, (0,0,0), -1)
-            cv2.circle(img, tuple(pt), 7, c, -1)
+        cv2.circle(img, tuple(pt), 9, (0,0,0), -1)
+        cv2.circle(img, tuple(pt), 7, c, -1)
         tag = lbl.split()[0].strip()
         cv2.putText(img, tag, (pt[0]+10, pt[1]-8), cv2.FONT_HERSHEY_SIMPLEX, 0.52, c, 2)
 
-    # Sideline guide lines: pt5 (idx 4)↔pt10  and  pt6 (idx 5)↔pt11
-    opt10 = optional_pts[0] if len(optional_pts) > 0 and optional_pts[0] is not None else None
-    opt11 = optional_pts[1] if len(optional_pts) > 1 and optional_pts[1] is not None else None
-    if n_req >= 5 and opt10 is not None:
-        cv2.line(img, tuple(required_pts[4]), tuple(opt10), C_OPT_NEAR, 2)
-    if n_req >= 6 and opt11 is not None:
-        cv2.line(img, tuple(required_pts[5]), tuple(opt11), C_OPT_NEAR, 2)
+    # Live sideline angle preview: connect far corner ↔ near corner once both are placed
+    if n_req > 9 and n_req >= 5:   # have both pt5 (far-left) and pt10 (near-left)
+        cv2.line(img, tuple(required_pts[4]), tuple(required_pts[9]),  (255, 170, 70), 2)
+    if n_req > 10 and n_req >= 6:  # have both pt6 (far-right) and pt11 (near-right)
+        cv2.line(img, tuple(required_pts[5]), tuple(required_pts[10]), (255, 170, 70), 2)
 
     # Projected court guide lines once homography is available
     C_EXPECTED = (160, 160, 40)
@@ -461,8 +431,7 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
     status = (f"Req {n_req}/{NUM_REQUIRED}  Opt placed:{placed} skipped:{skipped}  "
               f"Total:{total} [{q}]   U=undo  R=reset  S=save  P=preview  Q=quit")
     cv2.putText(img, status, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.37, C_TEXT, 1)
-    for lx, txt, c in [(w-320, "REQ", C_REQ_DONE), (w-260, "10/11=near", C_OPT_NEAR),
-                        (w-150, "12+=half-ct", C_OPT_HALF)]:
+    for lx, txt, c in [(w-200, "REQ", C_REQ_DONE), (w-130, "12-14=opt", C_OPT_HALF)]:
         cv2.putText(img, txt, (lx, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.35, c, 1)
 
     if _zoom > 1.0:
@@ -492,6 +461,8 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
             tip = "TIP: where the 3pt arc MEETS the BASELINE — inner-left then inner-right, outside the FT lane corners"
         elif idx == 8:
             tip = "TIP: highest point of the 3pt arc, directly above the basket — visible as the arc crown"
+        elif idx in (9, 10):
+            tip = "TIP (▲ ANGLE): click the sideline stripe CLOSEST TO THE CAMERA — fixes the sideline angle (near-left then near-right)"
         else:
             tip = ""
         cv2.putText(img, tip, (8, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.37, (80,200,255), 1)
@@ -505,12 +476,8 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
                     "RIGHT-CLICK (2nd right-click near same spot = SKIP):",
                     (8, h-54), cv2.FONT_HERSHEY_SIMPLEX, 0.37, hint_c, 1)
         cv2.putText(img, lbl, (8, h-32), cv2.FONT_HERSHEY_SIMPLEX, 0.40, hint_c, 1)
-        if idx < NUM_OPT_NEAR:
-            tip = ("Points 10/11: near sideline corners visible from the camera end — "
-                   "or SKIP if outside the frame")
-        else:
-            tip = ("Points 12/13/14: half-court / centre-circle anchors — "
-                   "SKIP if half-court line is not visible")
+        tip = ("Points 12/13/14: half-court / centre-circle anchors — "
+               "SKIP if half-court line is not visible")
         cv2.putText(img, tip, (8, h-10), cv2.FONT_HERSHEY_SIMPLEX, 0.37, hint_c, 1)
 
     else:
@@ -636,42 +603,75 @@ def _collect_src_dst():
 def _compute_homography():
     if len(required_pts) < NUM_REQUIRED:
         return None, 0, float('inf')
-    src, dst = _collect_src_dst()
-    if len(src) < NUM_REQUIRED:
+
+    # ── PASS 1: fit from the 9 geometry-fixed points (indices 0-8) ────────
+    # These have fully known court coordinates.  We use them to bootstrap
+    # a homography that can tell us the y-depth of the near sideline clicks.
+    src9 = np.array(required_pts[:9], dtype=np.float32)
+    dst9 = REF_REQUIRED[:9].copy()
+
+    FT_IDX     = [0, 1, 2, 3]
+    FAR_IDX    = [4, 5]
+    FT_REPEAT  = 3
+    FAR_REPEAT = 5
+
+    def _weighted(src_base, dst_base, ft_idx, ft_rep, corner_idx, corner_rep):
+        sw = list(src_base);  dw = list(dst_base)
+        for fi in ft_idx:
+            if fi < len(src_base):
+                for _ in range(ft_rep - 1):
+                    sw.append(src_base[fi]);  dw.append(dst_base[fi])
+        for ci in corner_idx:
+            if ci < len(src_base):
+                for _ in range(corner_rep - 1):
+                    sw.append(src_base[ci]);  dw.append(dst_base[ci])
+        return np.array(sw, dtype=np.float32), np.array(dw, dtype=np.float32)
+
+    sw9, dw9 = _weighted(src9, dst9, FT_IDX, FT_REPEAT, FAR_IDX, FAR_REPEAT)
+    H1, _ = cv2.findHomography(sw9, dw9, cv2.RANSAC, 5.0)
+    if H1 is None:
         return None, 0, float('inf')
 
-    # ── Weighted homography ────────────────────────────────────────────────
-    # FT box corners (pts 1-4, indices 0-3): primary kernel — 3×.
-    # Sideline corners (pts 5-6, indices 4-5): define the absolute court WIDTH,
-    # from which the full half-court depth is derived — weighted HIGHEST at 5×
-    # so the sideline-defined scale dominates the global fit.
-    FT_IDX        = [0, 1, 2, 3]
-    FT_REPEAT     = 3
-    CORNER_IDX    = [4, 5]
-    CORNER_REPEAT = 5   # sidelines define the scale → highest weight
+    # ── PASS 2: recover the true court-y of the near sideline clicks ──────
+    # Project pts 10 & 11 (indices 9 & 10) through H1 to get their y.
+    # We keep x fixed at 0 and COURT_W respectively; only y is unknown.
+    near_px = np.array(required_pts[9:11], dtype=np.float32).reshape(-1, 1, 2)
+    near_court = cv2.perspectiveTransform(near_px, H1).reshape(-1, 2)
 
-    src_w = list(src);  dst_w = list(dst)
-    for fi in FT_IDX:
-        if fi < len(required_pts):
-            for _ in range(FT_REPEAT - 1):
-                src_w.append(src[fi]);  dst_w.append(dst[fi])
-    for ci in CORNER_IDX:
-        if ci < len(required_pts):
-            for _ in range(CORNER_REPEAT - 1):
-                src_w.append(src[ci]);  dst_w.append(dst[ci])
+    court_w = float(REF_REQUIRED[5][0])   # right sideline x = COURT_W
+    # Clamp y to a sane range: must be beyond the FT line and within the court
+    ft_y    = float(REF_REQUIRED[2][1])
+    half_y  = _HALF_H
 
-    src_w = np.array(src_w, dtype=np.float32)
-    dst_w = np.array(dst_w, dtype=np.float32)
+    dst_near = np.array([
+        [0.0,       float(np.clip(near_court[0, 1], ft_y + 50, half_y))],
+        [court_w,   float(np.clip(near_court[1, 1], ft_y + 50, half_y))],
+    ], dtype=np.float32)
 
-    H, mask = cv2.findHomography(src_w, dst_w, cv2.RANSAC, 5.0)
+    # ── PASS 2 fit: all 11 points with correct coordinates ────────────────
+    src_all = np.array(required_pts[:11], dtype=np.float32)
+    dst_all = np.vstack([REF_REQUIRED[:9], dst_near])
+
+    # Add optional pts
+    for i, pt in enumerate(optional_pts):
+        if pt is not None:
+            _, _, ref_row = _opt_info(i)
+            src_all = np.vstack([src_all, np.array(pt, dtype=np.float32)])
+            dst_all = np.vstack([dst_all, ref_row])
+
+    NEAR_REPEAT = 5   # near sideline pts get high weight for angle
+    sw_all, dw_all = _weighted(src_all, dst_all, FT_IDX, FT_REPEAT,
+                               FAR_IDX + [9, 10], max(FAR_REPEAT, NEAR_REPEAT))
+    H, mask = cv2.findHomography(sw_all, dw_all, cv2.RANSAC, 5.0)
     if H is None:
         return None, 0, float('inf')
 
-    mask_orig = mask[:len(src)].ravel() if mask is not None else np.ones(len(src), dtype=np.uint8)
+    n = len(src_all)
+    mask_orig = mask[:n].ravel() if mask is not None else np.ones(n, dtype=np.uint8)
     inliers   = int(mask_orig.sum())
-    src_in    = src[mask_orig == 1]
-    dst_in    = dst[mask_orig == 1]
-    proj      = cv2.perspectiveTransform(src_in.reshape(-1,1,2), H).reshape(-1,2)
+    src_in    = src_all[mask_orig == 1]
+    dst_in    = dst_all[mask_orig == 1]
+    proj      = cv2.perspectiveTransform(src_in.reshape(-1, 1, 2), H).reshape(-1, 2)
     errs      = np.linalg.norm(proj - dst_in, axis=1)
     reproj    = float(errs.mean()) if len(errs) > 0 else float('inf')
     return H, inliers, reproj
@@ -809,16 +809,21 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
         cv2.line(preview, arc_pts[i], arc_pts[i+1], (0,180,255), 2)
 
     # Reprojection error dots
-    src, dst = _collect_src_dst()
-    proj_pts = cv2.perspectiveTransform(src.reshape(-1,1,2), H_inv).reshape(-1,2)
-    # Sideline corners are at required indices 4 & 5 (pts 5 & 6)
-    _sideline_idx = {4, 5}
-    _opt_start = len(required_pts)
-    for _oi in range(min(NUM_OPT_NEAR, len(optional_pts))):
-        if optional_pts[_oi] is not None:
-            _sideline_idx.add(_opt_start + _oi)
+    # For pts 1-9 and optionals: show green=click, blue=expected, yellow=error
+    # For pts 10-11 (near sideline): only show green click — y was derived,
+    # so there is no independent ground-truth to compare against.
+    src_fixed  = np.array(required_pts[:9], dtype=np.float32)
+    dst_fixed  = REF_REQUIRED[:9].copy()
+    for i, pt in enumerate(optional_pts):
+        if pt is not None:
+            _, _, ref_row = _opt_info(i)
+            src_fixed = np.vstack([src_fixed, np.array(pt, dtype=np.float32)])
+            dst_fixed = np.vstack([dst_fixed, ref_row])
 
-    for idx2, (orig, pp) in enumerate(zip(src, proj_pts)):
+    proj_pts = cv2.perspectiveTransform(src_fixed.reshape(-1,1,2), H_inv).reshape(-1,2)
+    _sideline_idx = {4, 5}
+
+    for idx2, (orig, pp) in enumerate(zip(src_fixed, proj_pts)):
         ox, oy = int(orig[0]), int(orig[1])
         px2, py2 = int(pp[0]), int(pp[1])
         if idx2 in _sideline_idx:
@@ -828,6 +833,18 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
         else:
             cv2.circle(preview, (ox,oy),   6, (0,255,0), -1)
             cv2.circle(preview, (px2,py2), 6, (0,0,255), 2)
+        err = math.hypot(ox-px2, oy-py2)
+        cv2.putText(preview, f"{err:.0f}px", (ox+8,oy-5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255,255,0), 1)
+
+    # Near sideline pts 10 & 11 — draw only the clicked pixel (green square)
+    for idx2 in range(9, min(11, len(required_pts))):
+        ox, oy = int(required_pts[idx2][0]), int(required_pts[idx2][1])
+        s = 6
+        cv2.rectangle(preview, (ox-s,oy-s), (ox+s,oy+s), (0,255,0), -1)
+        lbl = "10" if idx2 == 9 else "11"
+        cv2.putText(preview, f"{lbl}(near)", (ox+8,oy-5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255,255,0), 1)
         err = math.hypot(ox-px2, oy-py2)
         cv2.putText(preview, f"{err:.0f}px", (ox+8,oy-5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255,255,0), 1)
@@ -940,7 +957,7 @@ def _get_frame(video_path: str, frame_num=None) -> np.ndarray:
 #  Main
 # ---------------------------------------------------------------------------
 def main():
-    global base_img, display_img, REF_REQUIRED, REF_OPT_NEAR, REF_OPT_HALF
+    global base_img, display_img, REF_REQUIRED, REF_OPT_HALF
     global COURT_BASKET_Y_CM, COURT_R_3PT_CM, _HALF_H
 
     parser = argparse.ArgumentParser(description="B_AI Calibration — single half-court")
@@ -980,7 +997,7 @@ def main():
 
     _HALF_H = float(half_h)
 
-    REF_REQUIRED, REF_OPT_NEAR, REF_OPT_HALF = _build_reference_pts(
+    REF_REQUIRED, REF_OPT_HALF = _build_reference_pts(
         court_w, half_h, basket_x, basket_y, r_3pt,
         paint_l, paint_r, ft_y, circle_r, cam_dist)
     COURT_BASKET_Y_CM = float(basket_y)
@@ -995,15 +1012,12 @@ def main():
     print(f"  FT box       : x {paint_l:.0f}-{paint_r:.0f} cm,  y 0-{ft_y:.0f} cm")
     print(f"  Camera dist  : {cam_dist:.0f} cm from baseline")
     print()
-    print("  REQUIRED (left-click all 9, in order):")
-    print("  — pts 1-4 (★ FT box): click FIRST, most precise")
-    print("  — pts 5-6 (◆ sidelines): lock the court WIDTH scale")
-    print("  — pts 7-9 (3pt arc): improve mid-court accuracy")
+    print("  REQUIRED (left-click all 11, in order):")
+    print("  — pts  1-4 (★ FT box): click FIRST and most precisely")
+    print("  — pts  5-6 (◆ sidelines, far): lock court WIDTH scale")
+    print("  — pts  7-9 (3pt arc): improve mid-court accuracy")
+    print("  — pts 10-11 (▲ sidelines, near): fix sideline ANGLE — critical!")
     for lbl, pt in zip(REQUIRED_LABELS, REF_REQUIRED):
-        print(f"    {lbl}  →  ({pt[0]:.0f}, {pt[1]:.0f}) cm")
-    print()
-    print("  OPTIONAL 10 & 11 — near sideline frame-cuts:")
-    for lbl, pt in zip(OPT_NEAR_LABELS, REF_OPT_NEAR):
         print(f"    {lbl}  →  ({pt[0]:.0f}, {pt[1]:.0f}) cm")
     print()
     print("  OPTIONAL 12-14 — half-court / centre-circle (skip if off-camera):")
@@ -1012,11 +1026,10 @@ def main():
     print()
     print("  TIPS:")
     print("   ★ Click FT anchors (pts 1-4) FIRST and as precisely as possible")
-    print("   ◆ Sideline corners (pts 5-6) lock the court WIDTH — the depth scales from them")
-    print("   All depth (y-axis) is derived as HALF_H/COURT_W ratio of the sideline width")
-    print("   Add pts 10/11 if near sideline corners are visible in the frame")
-    print("   Add pts 12/13/14 if the half-court line is visible")
-    print("   After saving, check reprojection: errors < 10 px = good calibration")
+    print("   ◆ Far sideline corners (pts 5-6) lock court WIDTH")
+    print("   ▲ Near sideline pts (10-11) fix the sideline ANGLE — without these")
+    print("     the sidelines drawn by the homography will fan in the wrong direction")
+    print("   After saving, the sidelines in the preview should align with the court stripes")
     print("=" * 70)
 
     display_img = _redraw(base_img)
