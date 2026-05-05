@@ -21,7 +21,10 @@ class Config:
     UPLOAD_DIR = Path(__file__).parent / "uploads"
     PROCESSED_DIR = Path(__file__).parent / "processed"
     MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26s_5classes" / "weights" / "best.pt"
-    TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml"
+
+    # TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml" # Faster but in theory better with objects going in and out camera
+    TRACKER_PATH = Path(__file__).parent / "tracker" / "botsort.yaml" # Keeps better the classes if always visible
+
     MINIMAP_PATH = Path(__file__).parent / "tracker" / "minimap.png"
     HOMOGRAPHY_PATH = Path(__file__).parent / "tracker" / "homography.npy"
 
@@ -38,10 +41,10 @@ class Config:
     CLEANUP_INTERVAL = 60       # Run cleanup check every 60 seconds
 
     # Physics & Rules (Time in seconds)
-    SHOT_COOLDOWN = 1.5     # if the model recognizes a shot,  it waits 1.5 seconds before counting another.
+    SHOT_COOLDOWN = 0.5     # if the model recognizes a shot,  it waits 0.5 seconds before counting another.
                             # Prevente a single shot from being counted 10 times in 10 consecutive frames 
-    BASKET_COOLDOWN = 2.0   # the same for the basket recognition 
-    ANIMATION_DURATION = 1.5
+    BASKET_COOLDOWN = 2.0   # the same for the basket recognition
+    ANIMATION_DURATION = 1
 
     # Confidence Thresholds
     THRESHOLDS = {
@@ -528,11 +531,8 @@ class MinimapRenderer:
         court_w_px  = court_right - court_left
         court_h_px  = court_bot   - court_top
 
-        # calibrate_new.py stores x mirrored relative to the minimap drawing.
-        mirrored_x_cm = r.COURT_W - x_cm
-
         # Map court cm → minimap pixel, clamp to court area
-        t = mirrored_x_cm / r.COURT_W               # 0.0 (left) … 1.0 (right)
+        t = x_cm / r.COURT_W                         # 0.0 (left) … 1.0 (right)
         px = court_left + t * court_w_px
 
         # y_cm=0 (baseline) → top of minimap; y_cm=COURT_H → bottom

@@ -432,6 +432,11 @@ This project integrates **Ultralytics YOLO**, which is licensed under AGPL-3.0. 
 Copyright (c) 2025 sPappalard.
 
 ---
+<!--
 
+My notes
+- Export model:
+https://docs.ultralytics.com/es/modes/export/#what-do-the-output-tensors-represent-in-exported-yolo-models
 
-
+Epoch 75 last before dataset update
+-->

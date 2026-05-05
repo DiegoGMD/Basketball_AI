@@ -475,12 +475,18 @@ export default function App() {
               <Github size={14} /> sPappalard
             </a>
           </p>
+          <p className="flex items-center gap-2">
+            Adapted by 
+            <a href="https://github.com/DiegoGMD" target="_blank" rel="noopener noreferrer" className="text-slate-300 hover:text-orange-400 flex items-center gap-1 transition-colors font-medium">
+              <Github size={14} /> DiegoGMD
+            </a>
+          </p>
           <div className="flex items-center gap-4">
             <a href="https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
               <Database size={14} /> Roboflow Dataset
             </a>
             <span className="text-slate-700">|</span>
-            <span>v1.0.1</span>
+            <span>v1.0.1?</span>
           </div>
         </div>
       </footer>
