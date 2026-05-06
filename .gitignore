@@ -59,5 +59,6 @@ BE/uploads/
 BE/metrics_reports/
 
 # Large model files
-*.pt
+epoch*.pt
+.pt
 *.weights

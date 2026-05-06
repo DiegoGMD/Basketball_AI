@@ -714,7 +714,6 @@ def _compute_homography():
     reproj    = float(errs.mean()) if len(errs) > 0 else float('inf')
     return H, inliers, reproj
 
-
 def _compute_and_save() -> bool:
     placed = sum(1 for p in optional_pts if p is not None)
     total  = len(required_pts) + placed
@@ -734,6 +733,13 @@ def _compute_and_save() -> bool:
     HOMOGRAPHY_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.save(str(HOMOGRAPHY_OUTPUT_PATH), H)
     print(f"[calibrate] Saved → {HOMOGRAPHY_OUTPUT_PATH}")
+
+    h0_orig, w0_orig = h0, w0  # you need to store original dims before resize
+    calib_scale = 1280 / w0_orig if w0_orig > 1280 else 1.0
+    scale_path = HOMOGRAPHY_OUTPUT_PATH.parent / "homography_scale.npy"
+    np.save(str(scale_path), np.array([calib_scale], dtype=np.float32))
+    print(f"[calibrate] Calibration scale saved → {scale_path}  ({calib_scale:.4f})")
+
 
     # Save the half-court boundary so app.py can discard detections beyond it.
     # In the single-half-court system this is simply _HALF_H.
@@ -1031,9 +1037,16 @@ def main():
             sys.exit(f"[calibrate] Cannot read: {args.image}")
 
     h0, w0 = base_img.shape[:2]
+    w0_orig_w = w0  # store for scale saving
     if w0 > 1280:
         scale    = 1280 / w0
         base_img = cv2.resize(base_img, (1280, int(h0 * scale)))
+
+    h0_orig, w0_orig = h0, w0  # you need to store original dims before resize
+    calib_scale = 1280 / w0_orig if w0_orig > 1280 else 1.0
+    scale_path = HOMOGRAPHY_OUTPUT_PATH.parent / "homography_scale.npy"
+    np.save(str(scale_path), np.array([calib_scale], dtype=np.float32))
+    print(f"[calibrate] Calibration scale saved → {scale_path}  ({calib_scale:.4f})")
 
     if args.setup:
         (court_w, half_h, basket_x, basket_y, r_3pt,

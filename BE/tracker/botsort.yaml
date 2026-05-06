@@ -4,18 +4,18 @@
 # Docs: https://docs.ultralytics.com/modes/track/
 
 tracker_type: botsort # (str) Tracker backend: botsort|bytetrack; choose botsort to enable BoT-SORT features
-track_high_thresh: 0.25 # (float) First-stage match threshold; raise for cleaner tracks, lower to keep more
-track_low_thresh: 0.1 # (float) Second-stage threshold for low-score matches; balances recovery vs drift
-new_track_thresh: 0.25 # (float) Start a new track if no match ≥ this; higher reduces false tracks
-track_buffer: 30 # (int) Frames to keep lost tracks alive; higher handles occlusion, increases ID switches risk
-match_thresh: 0.8 # (float) Association similarity threshold (IoU/cost); tune with detector quality
-fuse_score: True # (bool) Fuse detection score with motion/IoU for matching; stabilizes weak detections
+track_high_thresh: 0.20 # (float) First-stage match threshold; raise for cleaner tracks, lower to keep more         def: 0.25
+track_low_thresh: 0.05 # (float) Second-stage threshold for low-score matches; balances recovery vs drift            def: 0.1
+new_track_thresh: 0.20 # (float) Start a new track if no match ≥ this; higher reduces false tracks                  def: 0.25
+track_buffer: 100 # (int) Frames to keep lost tracks alive; higher handles occlusion, increases ID switches risk    def: 30
+match_thresh: 0.60 # (float) Association similarity threshold (IoU/cost); tune with detector quality                 def: 0.8
+fuse_score: True # (bool) Fuse detection score with motion/IoU for matching; stabilizes weak detections             def: True
 
 # BoT-SORT specifics
 gmc_method: sparseOptFlow # (str) Global motion compensation: sparseOptFlow|orb|sift|ecc|none; helps moving camera scenes
 
 # ReID model related thresh
-proximity_thresh: 0.5 # (float) Min IoU to consider tracks proximate for ReID; higher is stricter
-appearance_thresh: 0.8 # (float) Min appearance similarity for ReID; raise to avoid identity swaps
+proximity_thresh: 0.5 # (float) Min IoU to consider tracks proximate for ReID; higher is stricter                   def: 0.5
+appearance_thresh: 1.2 # (float) Min appearance similarity for ReID; raise to avoid identity swaps                  def: 0.8
 with_reid: False # (bool) Enable ReID model use; needs extra model and compute
 model: auto # (str) ReID model name/path; "auto" uses detector features if available

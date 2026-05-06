@@ -41,8 +41,10 @@ class Config:
     CLEANUP_INTERVAL = 60       # Run cleanup check every 60 seconds
 
     # Physics & Rules (Time in seconds)
-    SHOT_COOLDOWN = 0.5     # if the model recognizes a shot,  it waits 0.5 seconds before counting another.
+    SHOT_COOLDOWN = 1     # if the model recognizes a shot,  it waits 0.5 seconds before counting another.
                             # Prevente a single shot from being counted 10 times in 10 consecutive frames 
+                            # If is too low, might activate the basket with no shot detector  
+
     BASKET_COOLDOWN = 2.0   # the same for the basket recognition
     ANIMATION_DURATION = 1
 
@@ -156,12 +158,14 @@ def load_homography():
     if not path.exists():
         print("⚠️  homography.npy not found — minimap dots will be disabled.")
         print("   Run:  python calibrate_new.py --video uploads\\your_video.mp4")
-        return None
+        return None, 1.0
     H = np.load(str(path))
-    print(f"✅ Homography loaded from {path}")
-    return H
+    scale_path = path.parent / "homography_scale.npy"
+    scale = float(np.load(str(scale_path))[0]) if scale_path.exists() else 1.0
+    print(f"✅ Homography loaded. Calibration scale: {scale:.4f}")
+    return H, scale
 
-homography_matrix = load_homography()  # None if not calibrated yet
+homography_matrix, homography_scale = load_homography() # None if not calibrated yet
 
 # ==================== AI MODEL ====================
 def load_model():
@@ -483,13 +487,16 @@ class MinimapRenderer:
     _F_BOT   = 0.9959   # half-court line       — BOTTOM of minimap
 
     @staticmethod
-    def project_point(pixel_xy: tuple, H: np.ndarray) -> tuple | None:
+    def project_point(pixel_xy: tuple, H: np.ndarray, scale: float = 1.0) -> tuple | None:
         """
         Transforms a single image pixel (x, y) → real-world court (x_cm, y_cm)
         using the homography matrix H.
         Returns None if the point projects outside the court bounds.
         """
-        pt = np.array([[[float(pixel_xy[0]), float(pixel_xy[1])]]], dtype=np.float32)
+        # Scale pixel from video resolution → calibration resolution
+        px = float(pixel_xy[0]) * scale
+        py = float(pixel_xy[1]) * scale
+        pt = np.array([[[px, py]]], dtype=np.float32)
         projected = cv2.perspectiveTransform(pt, H)
         x_cm, y_cm = projected[0][0]
 
@@ -500,7 +507,7 @@ class MinimapRenderer:
         if y_cm < -200 or y_cm > MinimapRenderer.COURT_H + 200:
             # print("Position outside the court [vert]")
             return None
-
+        
         return (x_cm, y_cm)
 
     @staticmethod
@@ -568,10 +575,41 @@ class MinimapRenderer:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 80, 255), 1)
             return mm
 
-        boxes = boxes_data.xyxy.cpu().numpy()     # x1,y1,x2,y2
-        track_ids = boxes_data.id.int().cpu().tolist() if boxes_data.id is not None else []
+        boxes = boxes_data.xyxy.cpu().numpy()   # x1,y1,x2,y2
+        track_ids = [None] * len(boxes_data)
+        if boxes_data.id is not None:
+            ids_list = boxes_data.id.int().cpu().tolist()
+            for j, tid in enumerate(ids_list):
+                track_ids[j] = tid
+
         classes = boxes_data.cls.int().cpu().tolist()
         confs = boxes_data.conf.cpu().tolist()
+
+        # Collect player centers for ID assignment
+        player_centers = {}  # track_id -> center
+        for i, (box, cls, conf, tid) in enumerate(zip(boxes, classes, confs, track_ids)):
+            if cls == 2 and conf >= thresholds.get(2, 0.3) and tid is not None:
+                x1, y1, x2, y2 = box
+                center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                player_centers[tid] = center
+
+        # Assign IDs to shooting players without ID by finding closest player
+        for i in range(len(boxes)):
+            cls = classes[i]
+            conf = confs[i]
+            tid = track_ids[i]
+            if cls == 4 and conf >= thresholds.get(4, 0.3) and tid is None:
+                x1, y1, x2, y2 = boxes[i]
+                shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                closest_tid = None
+                min_dist = float('inf')
+                for pid, pcenter in player_centers.items():
+                    dist = ((shoot_center[0] - pcenter[0]) ** 2 + (shoot_center[1] - pcenter[1]) ** 2) ** 0.5
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_tid = pid
+                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
+                    track_ids[i] = closest_tid
 
         for i, (box, cls, conf) in enumerate(zip(boxes, classes, confs)):
             if conf < thresholds.get(cls, 0.3):
@@ -607,7 +645,7 @@ class MinimapRenderer:
             cv2.circle(mm, mm_px, dot_size,     color,     -1)
 
             # Label players with their track ID
-            if cls in (2, 4) and i < len(track_ids):
+            if cls in (2, 4) and track_ids[i] is not None:
                 tid = track_ids[i]
                 cv2.putText(mm, str(tid), (mm_px[0] + 7, mm_px[1] + 4),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
@@ -867,7 +905,41 @@ class VideoProcessor:
         if not results[0].boxes: return
 
         boxes_data = results[0].boxes
-        track_ids = boxes_data.id.int().cpu().tolist() if boxes_data.id is not None else []
+        track_ids = [None] * len(boxes_data)
+        if boxes_data.id is not None:
+            ids_list = boxes_data.id.int().cpu().tolist()
+            for j, tid in enumerate(ids_list):
+                track_ids[j] = tid
+
+        classes = boxes_data.cls.int().cpu().tolist()
+        confs = boxes_data.conf.cpu().tolist()
+        boxes = boxes_data.xyxy.cpu().numpy()
+
+        # Collect player centers for ID assignment
+        player_centers = {}  # track_id -> center
+        for i, (box, cls, conf, tid) in enumerate(zip(boxes, classes, confs, track_ids)):
+            if cls == 2 and conf >= self.thresholds.get(2, 0.3) and tid is not None:
+                x1, y1, x2, y2 = box
+                center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                player_centers[tid] = center
+
+        # Assign IDs to shooting players without ID by finding closest player
+        for i in range(len(boxes)):
+            cls = classes[i]
+            conf = confs[i]
+            tid = track_ids[i]
+            if cls == 4 and conf >= self.thresholds.get(4, 0.3) and tid is None:
+                x1, y1, x2, y2 = boxes[i]
+                shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                closest_tid = None
+                min_dist = float('inf')
+                for pid, pcenter in player_centers.items():
+                    dist = ((shoot_center[0] - pcenter[0]) ** 2 + (shoot_center[1] - pcenter[1]) ** 2) ** 0.5
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_tid = pid
+                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
+                    track_ids[i] = closest_tid
 
         # --- DETECTION PRINT (every 30 frames to avoid flooding the console) ---
         if frame_idx % 30 == 0:
@@ -894,7 +966,7 @@ class VideoProcessor:
             center = ((x1 + x2) // 2, (y1 + y2) // 2)
 
             # Resolve the track ID for this detection (if tracking is active)
-            track_id = track_ids[i] if i < len(track_ids) else None
+            track_id = track_ids[i]
 
             if cls == 3:
                 stats.last_known_basket_pos = center
@@ -910,8 +982,41 @@ class VideoProcessor:
         if not results[0].boxes: return
 
         boxes_data = results[0].boxes
-        # Extract track IDs once for the whole frame (None-safe)
-        track_ids = boxes_data.id.int().cpu().tolist() if boxes_data.id is not None else []
+        track_ids = [None] * len(boxes_data)
+        if boxes_data.id is not None:
+            ids_list = boxes_data.id.int().cpu().tolist()
+            for j, tid in enumerate(ids_list):
+                track_ids[j] = tid
+
+        classes = boxes_data.cls.int().cpu().tolist()
+        confs = boxes_data.conf.cpu().tolist()
+        boxes = boxes_data.xyxy.cpu().numpy()
+
+        # Collect player centers for ID assignment
+        player_centers = {}  # track_id -> center
+        for i, (box, cls, conf, tid) in enumerate(zip(boxes, classes, confs, track_ids)):
+            if cls == 2 and conf >= self.thresholds.get(2, 0.3) and tid is not None:
+                x1, y1, x2, y2 = box
+                center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                player_centers[tid] = center
+
+        # Assign IDs to shooting players without ID by finding closest player
+        for i in range(len(boxes)):
+            cls = classes[i]
+            conf = confs[i]
+            tid = track_ids[i]
+            if cls == 4 and conf >= self.thresholds.get(4, 0.3) and tid is None:
+                x1, y1, x2, y2 = boxes[i]
+                shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                closest_tid = None
+                min_dist = float('inf')
+                for pid, pcenter in player_centers.items():
+                    dist = ((shoot_center[0] - pcenter[0]) ** 2 + (shoot_center[1] - pcenter[1]) ** 2) ** 0.5
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_tid = pid
+                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
+                    track_ids[i] = closest_tid
 
         for i, box in enumerate(boxes_data):
             cls = int(box.cls[0])
@@ -923,7 +1028,7 @@ class VideoProcessor:
 
             # Build label: include track ID for players so we can identify them
             class_name = Config.CLASSES.get(cls, f"cls{cls}")
-            if cls in (2, 4) and i < len(track_ids):
+            if cls in (0, 2, 4) and track_ids[i] is not None:
                 tid = track_ids[i]
                 label = f"#{tid} {class_name} {conf:.2f}"
             else:
@@ -944,12 +1049,44 @@ class VideoProcessor:
             return
 
         boxes = boxes_data.xywh.cpu()
-        track_ids = boxes_data.id.int().cpu().tolist()
+        track_ids = [None] * len(boxes_data)
+        if boxes_data.id is not None:
+            ids_list = boxes_data.id.int().cpu().tolist()
+            for j, tid in enumerate(ids_list):
+                track_ids[j] = tid
+
         classes = boxes_data.cls.int().cpu().tolist()
         confs = boxes_data.conf.cpu().tolist()
+        boxes_xyxy = boxes_data.xyxy.cpu().numpy()
+
+        # Collect player centers for ID assignment
+        player_centers = {}  # track_id -> center
+        for i, (box, cls, conf, tid) in enumerate(zip(boxes_xyxy, classes, confs, track_ids)):
+            if cls == 2 and conf >= self.thresholds.get(2, 0.3) and tid is not None:
+                x1, y1, x2, y2 = box
+                center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                player_centers[tid] = center
+
+        # Assign IDs to shooting players without ID by finding closest player
+        for i in range(len(boxes_xyxy)):
+            cls = classes[i]
+            conf = confs[i]
+            tid = track_ids[i]
+            if cls == 4 and conf >= self.thresholds.get(4, 0.3) and tid is None:
+                x1, y1, x2, y2 = boxes_xyxy[i]
+                shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                closest_tid = None
+                min_dist = float('inf')
+                for pid, pcenter in player_centers.items():
+                    dist = ((shoot_center[0] - pcenter[0]) ** 2 + (shoot_center[1] - pcenter[1]) ** 2) ** 0.5
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_tid = pid
+                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
+                    track_ids[i] = closest_tid
 
         for box, track_id, cls, conf in zip(boxes, track_ids, classes, confs):
-            if conf < self.thresholds.get(cls, 0.3):
+            if conf < self.thresholds.get(cls, 0.3) or track_id is None:
                 continue
 
             x, y, w, h = box
