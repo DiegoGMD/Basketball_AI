@@ -481,10 +481,10 @@ class MinimapRenderer:
     # Fractional offsets of the actual court area within the minimap image.
     # Tuned for the new minimap.png (1042x974 px, very thin outer border).
     # These are resolution-independent — multiply by mm_w / mm_h at draw time.
-    _F_LEFT  = 0.0029   # left sideline
-    _F_RIGHT = 0.9962   # right sideline
-    _F_TOP   = 0.0031   # baseline (basket end) — TOP of minimap
-    _F_BOT   = 0.9959   # half-court line       — BOTTOM of minimap
+    _F_LEFT  = 0.005    # left sideline
+    _F_RIGHT = 0.995    # right sideline
+    _F_TOP   = 0.005    # baseline (basket end) — TOP of minimap
+    _F_BOT   = 0.995    # half-court line       — BOTTOM of minimap
 
     @staticmethod
     def project_point(pixel_xy: tuple, H: np.ndarray, scale: float = 1.0) -> tuple | None:
@@ -563,6 +563,8 @@ class MinimapRenderer:
         """
         mm = minimap_base.copy()
 
+        if not results or results[0] is None:
+            return mm
         boxes_data = results[0].boxes
         if boxes_data is None or len(boxes_data) == 0:
             return mm  # No tracking data yet, return blank minimap
@@ -633,6 +635,11 @@ class MinimapRenderer:
 
             court_pos = MinimapRenderer.project_point((foot_x, foot_y), H)
             if court_pos is None:
+                print("[minimap]\n" + 
+                      "cls={cls}\n" +
+                      f"foot=({foot_x:.0f},{foot_y:.0f})\n" +
+                      f"court=({court_pos[0]:.0f},{court_pos[1]:.0f}) cm\n" +
+                      f"mm_px={MinimapRenderer.court_to_minimap(court_pos[0], court_pos[1], mm_w, mm_h)}")
                 continue
 
             mm_px = MinimapRenderer.court_to_minimap(court_pos[0], court_pos[1], mm_w, mm_h)
@@ -743,6 +750,12 @@ class VideoProcessor:
                     frame, persist=True, verbose=False, 
                     conf=0.25, tracker=Config.TRACKER_PATH, imgsz=640
                 )
+
+                # Guard: tracker can return [None] on the first frame
+                if not results or results[0] is None:
+                    writer.write(np.hstack((annotated, np.zeros((FINAL_H, RIGHT_W, 3), dtype=np.uint8))))
+                    frame_idx += 1
+                    continue
 
                 # --- LOGIC --- 
                 # Update scores if it finds shots or baskets. 
@@ -1044,6 +1057,8 @@ class VideoProcessor:
 
     # Draw motion trail polylines for each tracked object (from tracking_test.py)
     def _draw_tracking_trails(self, frame, results):
+        if not results or results[0] is None:
+            return
         boxes_data = results[0].boxes
         if not boxes_data or not boxes_data.is_track:
             return

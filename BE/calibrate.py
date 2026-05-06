@@ -52,7 +52,7 @@
 #
 # =============================================================================
 #
-#  POINT MAP  - click in this order:
+#   Expected court diagram
 #
 #                          baseline
 #    [5]───[7]───────────[1]───────[2]───────────[8]───[6]
@@ -69,15 +69,16 @@
 #     |???????                                   ???????|
 #     |???????????????                   ???????????????| 
 #     ────────────────────────[C]────────────────────────
+#                          half-court
 #
-#     [C] camera location
-#         (approximate location where the input camera sits)
+#   [C] camera location
+#       (approximate location where the input camera sits)
 #
-#     [B] basket location
-#         (approximate location where the basket being shot at sits)
+#   [B] basket location
+#       (approximate location where the basket being shot at sits)
 #
-#     [?] Area not visible
-#         (All covered in the "?" sign is not visible by the camera)
+#   [?] Area not visible
+#       (All covered in the "?" sign is not visible by the camera)
 #
 # =============================================================================
 #
@@ -108,7 +109,7 @@
 #  14. Half-court centre            midpoint of the half-court line
 #
 #   MINIMUM to save:   11 required
-#   Full half-court:   11..14
+#   Full half-court:   11 - 14
 #
 # =============================================================================
 
@@ -174,17 +175,17 @@ def _build_reference_pts(court_w, half_h, basket_x, basket_y, r_3pt,
     y3top = basket_y + r_3pt
 
     required = np.array([
-        [float(paint_l),    0.0           ],     # 1  left  FT box x baseline    ★
-        [float(paint_r),    0.0           ],     # 2  right FT box x baseline    ★
-        [float(paint_l),    float(ft_y)   ],     # 3  left  FT line end          ★
-        [float(paint_r),    float(ft_y)   ],     # 4  right FT line end          ★
-        [0.0,               0.0           ],     # 5  left  baseline corner      ◆
-        [float(court_w),    0.0           ],     # 6  right baseline corner      ◆
-        [float(x3l),        0.0           ],     # 7  left  3pt x baseline
-        [float(x3r),        0.0           ],     # 8  right 3pt x baseline
-        [float(basket_x),   float(y3top)  ],     # 9  top of 3pt arc
-        [0.0,               float(cam_dist)],    # 10 left  near sideline        ▲
-        [float(court_w),    float(cam_dist)],    # 11 right near sideline        ▲
+        [float(paint_l),    0.0           ],    # 1  left  FT box x baseline
+        [float(paint_r),    0.0           ],    # 2  right FT box x baseline
+        [float(paint_l),    float(ft_y)   ],    # 3  left  FT line end
+        [float(paint_r),    float(ft_y)   ],    # 4  right FT line end
+        [0.0,               0.0           ],    # 5  left  baseline corner
+        [float(court_w),    0.0           ],    # 6  right baseline corner
+        [float(x3l),        0.0           ],    # 7  left  3pt x baseline
+        [float(x3r),        0.0           ],    # 8  right 3pt x baseline
+        [float(basket_x),   float(y3top)  ],    # 9  top of 3pt arc
+        [0.0,               float(cam_dist)],   # 10 left  near sideline
+        [float(court_w),    float(cam_dist)],   # 11 right near sideline
     ], dtype=np.float32)
 
     opt_half = np.array([
@@ -343,7 +344,7 @@ _BOX_REQ_IDX = {4, 5, 9, 10}   # far & near sideline corners → square marker
 
 
 # ---------------------------------------------------------------------------
-#  Redraw
+#   Redraw
 # ---------------------------------------------------------------------------
 def _redraw(img_base: np.ndarray) -> np.ndarray:
     img = img_base.copy()
@@ -390,9 +391,9 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
                 court_w  = float(REF_REQUIRED[5][0])
                 half_y   = _HALF_H
                 # FT box coords: indices 0-3
-                ft_y_ref = float(REF_REQUIRED[2][1])   # pt 3 y (FT line depth)
-                pl       = float(REF_REQUIRED[0][0])   # pt 1 x (left  FT box)
-                pr       = float(REF_REQUIRED[1][0])   # pt 2 x (right FT box)
+                ft_y_ref = float(REF_REQUIRED[2][1])    # pt 3 y (FT line depth)
+                pl       = float(REF_REQUIRED[0][0])    # pt 1 x (left  FT box)
+                pr       = float(REF_REQUIRED[1][0])    # pt 2 x (right FT box)
 
                 def _proj_line(cx1, cy1, cx2, cy2, colour, thickness=1):
                     pts_c = np.array([[[cx1, cy1]], [[cx2, cy2]]], dtype=np.float32)
@@ -579,7 +580,7 @@ def _mouse_cb(event, x, y, flags, param):
 
 
 # ---------------------------------------------------------------------------
-#  Undo
+#   Undo
 # ---------------------------------------------------------------------------
 def _undo():
     global _pending_opt
@@ -595,7 +596,7 @@ def _undo():
 
 
 # ---------------------------------------------------------------------------
-#  Homography computation
+#   Homography computation
 # ---------------------------------------------------------------------------
 def _collect_src_dst():
     src, dst = [], []
@@ -612,9 +613,9 @@ def _compute_homography():
     if len(required_pts) < NUM_REQUIRED:
         return None, 0, float('inf')
 
-    court_w = float(REF_REQUIRED[5][0])   # COURT_W (right sideline x = 1500 cm)
-    ft_y_cm = float(REF_REQUIRED[2][1])   # FT line y (575 cm)
-    half_y  = _HALF_H                     # half-court depth (1400 cm)
+    court_w = float(REF_REQUIRED[5][0]) # COURT_W (right sideline x = 1500 cm)
+    ft_y_cm = float(REF_REQUIRED[2][1]) # FT line y (575 cm)
+    half_y  = _HALF_H                   # half-court depth (1400 cm)
 
     # ── PASS 1: FT box only → reliable scale / aspect / depth ────────────
     # The FT box 4 corners are the most reliably clickable points on the court
@@ -645,10 +646,10 @@ def _compute_homography():
         ct = cv2.perspectiveTransform(px, H1)[0][0]
         return float(ct[0]), float(ct[1])
 
-    x_fl, y_fl = _proj_court(4)   # far  left
-    x_fr, y_fr = _proj_court(5)   # far  right
-    x_nl, y_nl = _proj_court(9)   # near left
-    x_nr, y_nr = _proj_court(10)  # near right
+    x_fl, y_fl = _proj_court(4)     # far left
+    x_fr, y_fr = _proj_court(5)     # far right
+    x_nl, y_nl = _proj_court(9)     # near left
+    x_nr, y_nr = _proj_court(10)    # near right
 
     # Symmetrise: each sideline gets one x; baseline and near line each get one y
     x_left  = (x_fl + x_nl) / 2.0   # average of far-left and near-left x
@@ -657,10 +658,10 @@ def _compute_homography():
     near_y  = float(np.clip((y_nl + y_nr) / 2.0,  ft_y_cm + 50, half_y))
 
     derived_sideline_dst = {
-        4:  [x_left,   far_y ],   # far  left  corner
-        5:  [x_right,  far_y ],   # far  right corner
-        9:  [x_left,   near_y],   # near left
-        10: [x_right,  near_y],   # near right
+        4:  [x_left,   far_y ],     # far  left  corner
+        5:  [x_right,  far_y ],     # far  right corner
+        9:  [x_left,   near_y],     # near left
+        10: [x_right,  near_y],     # near right
     }
 
     # ── Final fit: all 11 required + optional pts ─────────────────────────
@@ -683,11 +684,11 @@ def _compute_homography():
     dst_all = np.array(dst_all, dtype=np.float32)
 
     # Weights:
-    #   FT box (idx 0-3)         — 8× : primary scale — most reliable clicks
-    #   Far sideline (idx 4-5)   — 4× : far end of sideline
-    #   3pt-baseline (idx 6-7)   — 2× : baseline geometry
-    #   Arc top (idx 8)          — 2× : depth anchor
-    #   Near sideline (idx 9-10) — 4× : near end of sideline — fixes angle
+    #   FT box (idx 0-3)            - 8× : primary scale - most reliable clicks
+    #   Far sideline (idx 4-5)      - 4× : far end of sideline
+    #   3pt-baseline (idx 6-7)      - 2× : baseline geometry
+    #   Arc top (idx 8)             - 2× : depth anchor
+    #   Near sideline (idx 9-10)    - 4× : near end of sideline - fixes angle
     weight_map = {0:8, 1:8, 2:8, 3:8, 4:4, 5:4, 6:2, 7:2, 8:2, 9:4, 10:4}
     src_w_list = []
     dst_w_list = []
@@ -706,12 +707,12 @@ def _compute_homography():
 
     n = len(src_all)
     mask_orig = mask[:n].ravel() if mask is not None else np.ones(n, dtype=np.uint8)
-    inliers   = int(mask_orig.sum())
-    src_in    = src_all[mask_orig == 1]
-    dst_in    = dst_all[mask_orig == 1]
-    proj      = cv2.perspectiveTransform(src_in.reshape(-1, 1, 2), H).reshape(-1, 2)
-    errs      = np.linalg.norm(proj - dst_in, axis=1)
-    reproj    = float(errs.mean()) if len(errs) > 0 else float('inf')
+    inliers     = int(mask_orig.sum())
+    src_in      = src_all[mask_orig == 1]
+    dst_in      = dst_all[mask_orig == 1]
+    proj        = cv2.perspectiveTransform(src_in.reshape(-1, 1, 2), H).reshape(-1, 2)
+    errs        = np.linalg.norm(proj - dst_in, axis=1)
+    reproj      = float(errs.mean()) if len(errs) > 0 else float('inf')
     return H, inliers, reproj
 
 def _compute_and_save() -> bool:
@@ -733,13 +734,6 @@ def _compute_and_save() -> bool:
     HOMOGRAPHY_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     np.save(str(HOMOGRAPHY_OUTPUT_PATH), H)
     print(f"[calibrate] Saved → {HOMOGRAPHY_OUTPUT_PATH}")
-
-    h0_orig, w0_orig = h0, w0  # you need to store original dims before resize
-    calib_scale = 1280 / w0_orig if w0_orig > 1280 else 1.0
-    scale_path = HOMOGRAPHY_OUTPUT_PATH.parent / "homography_scale.npy"
-    np.save(str(scale_path), np.array([calib_scale], dtype=np.float32))
-    print(f"[calibrate] Calibration scale saved → {scale_path}  ({calib_scale:.4f})")
-
 
     # Save the half-court boundary so app.py can discard detections beyond it.
     # In the single-half-court system this is simply _HALF_H.
@@ -800,12 +794,12 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
 
     # New point order: 0=FT-L-base, 1=FT-R-base, 2=FT-L-line, 3=FT-R-line,
     #                  4=sideline-L, 5=sideline-R, 6=3pt-L, 7=3pt-R, 8=arc-top
-    paint_l  = float(REF_REQUIRED[0][0])   # pt 1 x  (left  FT box on baseline)
-    paint_r  = float(REF_REQUIRED[1][0])   # pt 2 x  (right FT box on baseline)
-    ft_y_ref = float(REF_REQUIRED[2][1])   # pt 3 y  (FT line depth)
-    court_w  = float(REF_REQUIRED[5][0])   # pt 6 x  (right sideline) = COURT_W
-    x3l      = float(REF_REQUIRED[6][0])   # pt 7 x  (left  3pt-baseline)
-    x3r      = float(REF_REQUIRED[7][0])   # pt 8 x  (right 3pt-baseline)
+    paint_l  = float(REF_REQUIRED[0][0])    # pt 1 x (left  FT box on baseline)
+    paint_r  = float(REF_REQUIRED[1][0])    # pt 2 x (right FT box on baseline)
+    ft_y_ref = float(REF_REQUIRED[2][1])    # pt 3 y (FT line depth)
+    court_w  = float(REF_REQUIRED[5][0])    # pt 6 x (right sideline) = COURT_W
+    x3l      = float(REF_REQUIRED[6][0])    # pt 7 x (left  3pt-baseline)
+    x3r      = float(REF_REQUIRED[7][0])    # pt 8 x (right 3pt-baseline)
     bx       = (x3l + x3r) / 2
     basket_y = COURT_BASKET_Y_CM if COURT_BASKET_Y_CM is not None else 157.0
     r_3pt    = COURT_R_3PT_CM    if COURT_R_3PT_CM    is not None else 675.0
@@ -1037,16 +1031,9 @@ def main():
             sys.exit(f"[calibrate] Cannot read: {args.image}")
 
     h0, w0 = base_img.shape[:2]
-    w0_orig_w = w0  # store for scale saving
     if w0 > 1280:
         scale    = 1280 / w0
         base_img = cv2.resize(base_img, (1280, int(h0 * scale)))
-
-    h0_orig, w0_orig = h0, w0  # you need to store original dims before resize
-    calib_scale = 1280 / w0_orig if w0_orig > 1280 else 1.0
-    scale_path = HOMOGRAPHY_OUTPUT_PATH.parent / "homography_scale.npy"
-    np.save(str(scale_path), np.array([calib_scale], dtype=np.float32))
-    print(f"[calibrate] Calibration scale saved → {scale_path}  ({calib_scale:.4f})")
 
     if args.setup:
         (court_w, half_h, basket_x, basket_y, r_3pt,
