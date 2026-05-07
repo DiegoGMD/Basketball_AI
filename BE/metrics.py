@@ -410,61 +410,6 @@ class ModelEvaluator:
                 print(f"{cls_name:<20} {map50:<12.4f} {prec:<12.4f} {rec:<12.4f}")
         
         print("="*70 + "\n")
-    
-    def plot_validation_results(self):
-        """Plot validation metrics."""
-        if self.results is None:
-            return
-        
-        class_names = self.load_class_names()
-        
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-        fig.suptitle('Validation Results by Class', fontsize=16, fontweight='bold')
-        
-        class_list = [class_names[i] for i in range(len(class_names))]
-        
-        # mAP50 per class
-        if hasattr(self.results.box, 'map50_per_class'):
-            ax = axes[0]
-            map50_vals = self.results.box.map50_per_class
-            colors = plt.cm.viridis(np.linspace(0, 1, len(map50_vals)))
-            ax.bar(class_list, map50_vals, color=colors, alpha=0.7, edgecolor='black')
-            ax.set_ylabel('mAP@50')
-            ax.set_title('mAP@50 per Class')
-            ax.set_ylim([0, 1])
-            ax.grid(True, alpha=0.3, axis='y')
-            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
-        
-        # Precision per class
-        if hasattr(self.results.box, 'p_per_class'):
-            ax = axes[1]
-            prec_vals = self.results.box.p_per_class
-            colors = plt.cm.plasma(np.linspace(0, 1, len(prec_vals)))
-            ax.bar(class_list, prec_vals, color=colors, alpha=0.7, edgecolor='black')
-            ax.set_ylabel('Precision')
-            ax.set_title('Precision per Class')
-            ax.set_ylim([0, 1])
-            ax.grid(True, alpha=0.3, axis='y')
-            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
-        
-        # Recall per class
-        if hasattr(self.results.box, 'r_per_class'):
-            ax = axes[2]
-            rec_vals = self.results.box.r_per_class
-            colors = plt.cm.cool(np.linspace(0, 1, len(rec_vals)))
-            ax.bar(class_list, rec_vals, color=colors, alpha=0.7, edgecolor='black')
-            ax.set_ylabel('Recall')
-            ax.set_title('Recall per Class')
-            ax.set_ylim([0, 1])
-            ax.grid(True, alpha=0.3, axis='y')
-            plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
-        
-        # It is not detecting the map50 per class — add a fallback note on the plot
-        plt.tight_layout()
-        save_path = MetricsConfig.OUTPUT_DIR / 'validation_results.png'
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Saved: {save_path}")
-        plt.close()
 
 # ==============================================================================
 # 3. PERFORMANCE INSIGHTS & EXPLANATIONS
@@ -833,11 +778,6 @@ def main():
     print("\n🔍 Evaluating model on test set...")
     evaluator = ModelEvaluator(MetricsConfig.MODEL_PATH, MetricsConfig.DATA_YAML)
     val_results = evaluator.validate()
-    
-    if val_results:
-        evaluator.print_validation_report()
-        print("📊 Generating validation visualization...")
-        evaluator.plot_validation_results()
     
     # Step 3: Performance Insights
     print("\n💡 Generating performance insights...")

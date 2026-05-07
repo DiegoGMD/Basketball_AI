@@ -12,7 +12,8 @@ import threading
 from collections import deque, defaultdict
 from enum import Enum
 import time
-import json  # Added to parse custom thresholds
+import json     # Added to parse custom thresholds
+import csv      # Added to make the resulting csv for the training session 
 
 # ==================== CONFIGURATION ====================
 class Config:
@@ -244,6 +245,7 @@ class PlayerStats:
     def __init__(self):
         self.shots_attempted = 0
         self.baskets_made = 0
+        self.shot_positions: list[tuple[float, float]] = [] # (x_cm, y_cm) per shot
 
     @property
     def accuracy(self):
@@ -285,14 +287,18 @@ class GameStats:
         return self.player_stats[track_id]
 
     # called when the model recognised a player shooting
-    def register_shot(self, frame_idx, track_id: int | None = None):
+    def register_shot(self, frame_idx, track_id: int | None = None, court_pos: tuple | None = None):
         if frame_idx - self.last_shot_frame >= self.shot_cooldown_frames:
             self.shots_attempted += 1
             self.last_shot_frame = frame_idx
-            self._last_shooter_id = track_id
             if track_id is not None:
-                self._get_player(track_id).shots_attempted += 1
-                print(f"🏀  Shot registered → Player #{track_id}")
+                self._last_shooter_id = track_id
+            if self._last_shooter_id is not None:
+                ps = self._get_player(self._last_shooter_id)
+                ps.shots_attempted += 1
+                if court_pos is not None:
+                    ps.shot_positions.append(court_pos)
+                print(f"🏀  Shot registered → Player #{self._last_shooter_id}")
             return True
         return False
 
@@ -539,11 +545,11 @@ class MinimapRenderer:
         court_h_px  = court_bot   - court_top
 
         # Map court cm → minimap pixel, clamp to court area
-        t = x_cm / r.COURT_W                         # 0.0 (left) … 1.0 (right)
+        t = 1.0 - (x_cm / r.COURT_W)                # 0.0 (left) … 1.0 (right)
         px = court_left + t * court_w_px
 
         # y_cm=0 (baseline) → top of minimap; y_cm=COURT_H → bottom
-        s = y_cm / r.COURT_H                         # 0.0 (baseline) … 1.0 (half-court)
+        s = y_cm / r.COURT_H                        # 0.0 (baseline) … 1.0 (half-court)
         py = court_top + s * court_h_px
 
         px = int(np.clip(px, court_left,  court_right))
@@ -589,18 +595,21 @@ class MinimapRenderer:
 
         # Collect player centers for ID assignment
         player_centers = {}  # track_id -> center
+        player_boxes = {}
         for i, (box, cls, conf, tid) in enumerate(zip(boxes, classes, confs, track_ids)):
             if cls == 2 and conf >= thresholds.get(2, 0.3) and tid is not None:
                 x1, y1, x2, y2 = box
                 center = ((x1 + x2) / 2, (y1 + y2) / 2)
                 player_centers[tid] = center
+                player_boxes[tid] = (x1, y1, x2, y2)
 
         # Assign IDs to shooting players without ID by finding closest player
         for i in range(len(boxes)):
             cls = classes[i]
             conf = confs[i]
             tid = track_ids[i]
-            if cls == 4 and conf >= thresholds.get(4, 0.3) and tid is None:
+            if cls == 4 and conf >= thresholds.get(4, 0.3):
+                # Find closest cls 2 player by proximity
                 x1, y1, x2, y2 = boxes[i]
                 shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
                 closest_tid = None
@@ -610,7 +619,7 @@ class MinimapRenderer:
                     if dist < min_dist:
                         min_dist = dist
                         closest_tid = pid
-                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
+                if closest_tid is not None and min_dist < 200:  # increased from 100
                     track_ids[i] = closest_tid
 
         for i, (box, cls, conf) in enumerate(zip(boxes, classes, confs)):
@@ -633,13 +642,12 @@ class MinimapRenderer:
                 foot_x = (x1 + x2) / 2
                 foot_y = (y1 + y2) / 2
 
-            court_pos = MinimapRenderer.project_point((foot_x, foot_y), H)
+            court_pos = MinimapRenderer.project_point((foot_x, foot_y), H, scale=homography_scale)
             if court_pos is None:
-                print("[minimap]\n" + 
-                      "cls={cls}\n" +
-                      f"foot=({foot_x:.0f},{foot_y:.0f})\n" +
-                      f"court=({court_pos[0]:.0f},{court_pos[1]:.0f}) cm\n" +
-                      f"mm_px={MinimapRenderer.court_to_minimap(court_pos[0], court_pos[1], mm_w, mm_h)}")
+                # if cls == 0: # The ball in trajectory is ususlly not detected
+                #     print(f"[minimap] Missing ball → project_point returned None")
+                if cls != 0:
+                    print(f"[minimap] cls={cls} foot=({foot_x:.0f},{foot_y:.0f}) → project_point returned None")
                 continue
 
             mm_px = MinimapRenderer.court_to_minimap(court_pos[0], court_pos[1], mm_w, mm_h)
@@ -670,6 +678,7 @@ class VideoProcessor:
         # Use custom thresholds if provided, otherwise use defaults
         self.thresholds = thresholds if thresholds else Config.THRESHOLDS
         self.track_history = defaultdict(lambda: [])
+        self.last_player_ids: dict = {}  # bbox_region -> stable_id
         
     def run(self):
         try:
@@ -748,7 +757,7 @@ class VideoProcessor:
 
                 results = yolo_model.track(
                     frame, persist=True, verbose=False, 
-                    conf=0.25, tracker=Config.TRACKER_PATH, imgsz=640
+                    conf=0.25, tracker=Config.TRACKER_PATH, imgsz=640, iou=0.4
                 )
 
                 # Guard: tracker can return [None] on the first frame
@@ -903,6 +912,16 @@ class VideoProcessor:
                 self._update_status("completed", frame_idx, max_frames, stats)
                 print(f"✅ Finished. Acc: {stats.accuracy:.1f}%")
 
+                # --- CSV EXPORT ---
+                csv_path = Config.PROCESSED_DIR / f"{self.file_id}_stats.csv"
+                with open(csv_path, "w", newline="") as f:
+                    writer_csv = csv.writer(f)
+                    writer_csv.writerow(["player_id", "shots", "baskets", "accuracy_pct", "shot_positions"])
+                    for pid, ps in sorted(stats.player_stats.items()):
+                        positions_str = "; ".join(f"({x:.1f},{y:.1f})" for x, y in ps.shot_positions)
+                        writer_csv.writerow([pid, ps.shots_attempted, ps.baskets_made, f"{ps.accuracy:.1f}", positions_str])
+                print(f"📄 CSV saved → {csv_path}")
+
             # close the files
             cap.release()
             writer.release()
@@ -930,29 +949,36 @@ class VideoProcessor:
 
         # Collect player centers for ID assignment
         player_centers = {}  # track_id -> center
+        player_boxes = {}
         for i, (box, cls, conf, tid) in enumerate(zip(boxes, classes, confs, track_ids)):
             if cls == 2 and conf >= self.thresholds.get(2, 0.3) and tid is not None:
                 x1, y1, x2, y2 = box
                 center = ((x1 + x2) / 2, (y1 + y2) / 2)
                 player_centers[tid] = center
+                player_boxes[tid] = (x1, y1, x2, y2)
 
         # Assign IDs to shooting players without ID by finding closest player
         for i in range(len(boxes)):
             cls = classes[i]
             conf = confs[i]
             tid = track_ids[i]
-            if cls == 4 and conf >= self.thresholds.get(4, 0.3) and tid is None:
+            if cls == 4 and conf >= self.thresholds.get(4, 0.3):
                 x1, y1, x2, y2 = boxes[i]
-                shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
-                closest_tid = None
-                min_dist = float('inf')
-                for pid, pcenter in player_centers.items():
-                    dist = ((shoot_center[0] - pcenter[0]) ** 2 + (shoot_center[1] - pcenter[1]) ** 2) ** 0.5
-                    if dist < min_dist:
-                        min_dist = dist
-                        closest_tid = pid
-                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
-                    track_ids[i] = closest_tid
+                best_tid = None
+                best_iou = 0.0
+                for pid, (px1, py1, px2, py2) in player_boxes.items():  # need this dict too
+                    ix1, iy1 = max(x1, px1), max(y1, py1)
+                    ix2, iy2 = min(x2, px2), min(y2, py2)
+                    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                    if inter == 0:
+                        continue
+                    union = (x2-x1)*(y2-y1) + (px2-px1)*(py2-py1) - inter
+                    iou = inter / union
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_tid = pid
+                if best_tid is not None and best_iou > 0.3:  # at least 30% overlap
+                    track_ids[i] = best_tid
 
         # --- DETECTION PRINT (every 30 frames to avoid flooding the console) ---
         if frame_idx % 30 == 0:
@@ -984,8 +1010,13 @@ class VideoProcessor:
             if cls == 3:
                 stats.last_known_basket_pos = center
             elif cls == 4:
+                court_pos = None
+                if homography_matrix is not None:
+                    foot_x = (x1 + x2) / 2
+                    foot_y = y2  # bottom of bounding box
+                    court_pos = MinimapRenderer.project_point((foot_x, foot_y), H=homography_matrix, scale=homography_scale)
                 # Pass track_id so the shot is credited to the right player
-                stats.register_shot(frame_idx, track_id=track_id)
+                stats.register_shot(frame_idx, track_id=track_id, court_pos=court_pos)
             elif cls == 1:
                 target_pos = stats.last_known_basket_pos or center
                 stats.register_basket(frame_idx, target_pos)
@@ -1007,29 +1038,36 @@ class VideoProcessor:
 
         # Collect player centers for ID assignment
         player_centers = {}  # track_id -> center
+        player_boxes = {}
         for i, (box, cls, conf, tid) in enumerate(zip(boxes, classes, confs, track_ids)):
             if cls == 2 and conf >= self.thresholds.get(2, 0.3) and tid is not None:
                 x1, y1, x2, y2 = box
                 center = ((x1 + x2) / 2, (y1 + y2) / 2)
                 player_centers[tid] = center
+                player_boxes[tid] = (x1, y1, x2, y2)
 
         # Assign IDs to shooting players without ID by finding closest player
         for i in range(len(boxes)):
             cls = classes[i]
             conf = confs[i]
             tid = track_ids[i]
-            if cls == 4 and conf >= self.thresholds.get(4, 0.3) and tid is None:
+            if cls == 4 and conf >= self.thresholds.get(4, 0.3):
                 x1, y1, x2, y2 = boxes[i]
-                shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
-                closest_tid = None
-                min_dist = float('inf')
-                for pid, pcenter in player_centers.items():
-                    dist = ((shoot_center[0] - pcenter[0]) ** 2 + (shoot_center[1] - pcenter[1]) ** 2) ** 0.5
-                    if dist < min_dist:
-                        min_dist = dist
-                        closest_tid = pid
-                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
-                    track_ids[i] = closest_tid
+                best_tid = None
+                best_iou = 0.0
+                for pid, (px1, py1, px2, py2) in player_boxes.items():  # need this dict too
+                    ix1, iy1 = max(x1, px1), max(y1, py1)
+                    ix2, iy2 = min(x2, px2), min(y2, py2)
+                    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                    if inter == 0:
+                        continue
+                    union = (x2-x1)*(y2-y1) + (px2-px1)*(py2-py1) - inter
+                    iou = inter / union
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_tid = pid
+                if best_tid is not None and best_iou > 0.3:  # at least 30% overlap
+                    track_ids[i] = best_tid
 
         for i, box in enumerate(boxes_data):
             cls = int(box.cls[0])
@@ -1076,29 +1114,36 @@ class VideoProcessor:
 
         # Collect player centers for ID assignment
         player_centers = {}  # track_id -> center
+        player_boxes = {}
         for i, (box, cls, conf, tid) in enumerate(zip(boxes_xyxy, classes, confs, track_ids)):
             if cls == 2 and conf >= self.thresholds.get(2, 0.3) and tid is not None:
                 x1, y1, x2, y2 = box
                 center = ((x1 + x2) / 2, (y1 + y2) / 2)
                 player_centers[tid] = center
+                player_boxes[tid] = (x1, y1, x2, y2)
 
         # Assign IDs to shooting players without ID by finding closest player
-        for i in range(len(boxes_xyxy)):
+        for i in range(len(boxes)):
             cls = classes[i]
             conf = confs[i]
             tid = track_ids[i]
-            if cls == 4 and conf >= self.thresholds.get(4, 0.3) and tid is None:
+            if cls == 4 and conf >= self.thresholds.get(4, 0.3):
                 x1, y1, x2, y2 = boxes_xyxy[i]
-                shoot_center = ((x1 + x2) / 2, (y1 + y2) / 2)
-                closest_tid = None
-                min_dist = float('inf')
-                for pid, pcenter in player_centers.items():
-                    dist = ((shoot_center[0] - pcenter[0]) ** 2 + (shoot_center[1] - pcenter[1]) ** 2) ** 0.5
-                    if dist < min_dist:
-                        min_dist = dist
-                        closest_tid = pid
-                if closest_tid is not None and min_dist < 100:  # 100 pixel threshold
-                    track_ids[i] = closest_tid
+                best_tid = None
+                best_iou = 0.0
+                for pid, (px1, py1, px2, py2) in player_boxes.items():  # need this dict too
+                    ix1, iy1 = max(x1, px1), max(y1, py1)
+                    ix2, iy2 = min(x2, px2), min(y2, py2)
+                    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                    if inter == 0:
+                        continue
+                    union = (x2-x1)*(y2-y1) + (px2-px1)*(py2-py1) - inter
+                    iou = inter / union
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_tid = pid
+                if best_tid is not None and best_iou > 0.3:  # at least 30% overlap
+                    track_ids[i] = best_tid
 
         for box, track_id, cls, conf in zip(boxes, track_ids, classes, confs):
             if conf < self.thresholds.get(cls, 0.3) or track_id is None:
@@ -1186,6 +1231,13 @@ def download_result(file_id: str):
     # We don't delete immediately here to allow retries. 
     # The AutoCleanup service will handle it after RETENTION_SECONDS.
     return FileResponse(path, media_type="video/mp4", filename=f"basket_ai_{file_id}.mp4")
+
+@app.get("/download-csv/{file_id}")
+def download_csv(file_id: str):
+    path = Config.PROCESSED_DIR / f"{file_id}_stats.csv"
+    if not path.exists():
+        raise HTTPException(404, "CSV not ready or processing incomplete.")
+    return FileResponse(path, media_type="text/csv", filename=f"basket_stats_{file_id}.csv")
 
 if __name__ == "__main__":
     print("\n🏀 SERVER STARTING...")

@@ -163,6 +163,14 @@ export default function App() {
     window.open(`${API_URL}/download/${fileId}`, '_blank');
   };
 
+  const downloadStatsFile = () => {
+    window.open(`${API_URL}/download-csv/${fileId}`, '_blank');
+  };
+
+  const handleDownload = () => {
+    downloadVideo();
+    downloadStatsFile();
+  };
 
   // Graphic Interface (JSX)
   return (
@@ -387,7 +395,7 @@ export default function App() {
                   ) : status === 'completed' ? (
                     <div className="flex flex-wrap gap-4 justify-center w-full">
                         <button 
-                          onClick={downloadVideo}
+                          onClick={handleDownload}
                           className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-green-500/20 transform hover:scale-105"
                         >
                           <Download size={20} /> Download Result
