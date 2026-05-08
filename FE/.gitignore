@@ -56,7 +56,12 @@ BE/basketball-detection-srfkd-1/
 BE/processed/
 BE/runs/
 BE/uploads/
+BE/uploads/yolo26s_5classes/weights/
+BE/uploads/yolo26m_5classes/weights/
+BE/uploads/yolo26s_5classes/weights/best.pt
+BE/uploads/yolo26s_5classes/weights/last.pt
 
 # Large model files
 *.pt
 *.weights
+*.npy

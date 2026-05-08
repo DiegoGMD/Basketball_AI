@@ -4,7 +4,7 @@ model: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball
 data: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball-detection-srfkd-1\data_basketball.yaml
 epochs: 200
 time: null
-patience: 20
+patience: 40
 batch: 8
 imgsz: 640
 save: true

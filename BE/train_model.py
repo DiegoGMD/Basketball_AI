@@ -30,10 +30,10 @@ class Config:
     """
     # --- Paths ---
     PROJECT_NAME = r"C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training"
-    RUN_NAME = "yolo26s_5classes"
+    RUN_NAME = "yolo26m_5classes"
     DATASET_DIR = Path("basketball-detection-srfkd-1")
     DATA_YAML = "data_basketball.yaml"
-    BASE_MODEL = "yolo26s.pt"  # Starting point (Pre-trained: YOLO SMALL)
+    BASE_MODEL = "yolo26m.pt"  # Starting point (Pre-trained: YOLO SMALL)
     # BASE_MODEL = r"C:\Users\NewUser\Documents\basketball_weights\best.pt" # Recicle on a new machine
     
     # --- Checkpoint Handling ---
@@ -46,18 +46,18 @@ class Config:
     SEED = 42               # Locks the random seed to guarantee consistent training outcomes across runs.
     
     # --- Core Training Hyperparameters ---
-    EPOCHS = 500            # Total number of training epochs
+    EPOCHS = 200            # Total number of training epochs
     BATCH_SIZE = 8          # Batch size: the model studies 8 images at a time before updating the "brain" (Adjust based on my VRAM, 8 is good for 6GB VRAM)
     IMG_SIZE = 640          # Input image resolution
-    PATIENCE = 20           # Early stopping patience (epochs without improvement)
+    PATIENCE = 40           # Early stopping patience (epochs without improvement)
     SAVE_PERIOD = 5         # Save heavy checkpoints every 5 epochs
     OPTIMIZER = 'MuSGD'
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-    LR0 = 0.05              # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.1               # Final learning rate (lr0 * lrf)
+    LR0 = 0.01              # Initial learning rate (SGD=1E-2, Adam=1E-3)
+    LRF = 0.05              # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.0005
+    WEIGHT_DECAY = 0.0002
     WARMUP_EPOCHS = 3.0
     COS_LR = True           # Use Cosine LR scheduler
     
@@ -72,18 +72,18 @@ class Config:
     AUGMENTATION = {
         #color and light
         'hsv_h': 0.015,     # HSV-Hue adjustment
-        'hsv_s': 0.7,       # HSV-Saturation adjustment
-        'hsv_v': 0.4,       # HSV-Value adjustment
+        'hsv_s': 0.4,       # HSV-Saturation adjustment
+        'hsv_v': 0.2,       # HSV-Value adjustment
         #geometry and position
         'degrees': 5.0,     # Rotation (+/- deg)
         'translate': 0.1,   # Translation (+/- fraction)
-        'scale': 0.5,       # Scale gain (+/- gain)
-        'shear': 1.0,       # Shear angle (+/- deg) - Important for basket perspective
+        'scale': 0.3,       # Scale gain (+/- gain)
+        'shear': 0.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-        'mosaic': 0.4,      # Mosaic (Probability)
+        'mosaic': 0.2,      # Mosaic (Probability)
         'mixup': 0.0,      # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
         'erasing': 0.0,     # Random erasing (Probability) - Simulates occlusion
@@ -334,6 +334,10 @@ class TrainingSession:
         
         print("\n🔍 Running Final Validation...")
         metrics = model.val()
+
+        print("\n📦 Exporting model...")
+        model.export(format="onnx")  # or "torchscript", "tflite", "engine" (TensorRT), etc.
+        print(f"✅ Model exported.")
         
         # Check if we hit the 90% target (Approximate check)
         try:

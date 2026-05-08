@@ -244,6 +244,7 @@ H_OPT_HALF  = (190, 150,  40)
 # ---------------------------------------------------------------------------
 required_pts:       list              = []
 optional_pts:       list              = []      # [x,y] or None per optional slot
+_calib_scale:       float             = 1.0
 base_img:           np.ndarray | None = None
 display_img:        np.ndarray | None = None
 REF_REQUIRED:       np.ndarray | None = None
@@ -735,6 +736,10 @@ def _compute_and_save() -> bool:
     np.save(str(HOMOGRAPHY_OUTPUT_PATH), H)
     print(f"[calibrate] Saved → {HOMOGRAPHY_OUTPUT_PATH}")
 
+    scale_path = HOMOGRAPHY_OUTPUT_PATH.parent / "homography_scale.npy"
+    np.save(str(scale_path), np.array([_calib_scale], dtype=np.float32))
+    print(f"[calibrate] Scale saved → {scale_path}  ({_calib_scale:.4f})")
+
     # Save the half-court boundary so app.py can discard detections beyond it.
     # In the single-half-court system this is simply _HALF_H.
     half_y_path = HOMOGRAPHY_OUTPUT_PATH.parent / "half_court_y.npy"
@@ -1031,9 +1036,10 @@ def main():
             sys.exit(f"[calibrate] Cannot read: {args.image}")
 
     h0, w0 = base_img.shape[:2]
+    global _calib_scale
     if w0 > 1280:
-        scale    = 1280 / w0
-        base_img = cv2.resize(base_img, (1280, int(h0 * scale)))
+        _calib_scale = 1280 / w0
+        base_img = cv2.resize(base_img, (1280, int(h0 * _calib_scale)))
 
     if args.setup:
         (court_w, half_h, basket_x, basket_y, r_3pt,

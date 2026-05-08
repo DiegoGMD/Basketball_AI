@@ -545,7 +545,7 @@ class MinimapRenderer:
         court_h_px  = court_bot   - court_top
 
         # Map court cm → minimap pixel, clamp to court area
-        t = 1.0 - (x_cm / r.COURT_W)                # 0.0 (left) … 1.0 (right)
+        t = x_cm / r.COURT_W                # 0.0 (left) … 1.0 (right)
         px = court_left + t * court_w_px
 
         # y_cm=0 (baseline) → top of minimap; y_cm=COURT_H → bottom
