@@ -1,6 +1,6 @@
 task: detect
 mode: train
-model: yolo26m.pt
+model: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training\yolo26m_5classes\weights\last.pt
 data: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball-detection-srfkd-1\data_basketball.yaml
 epochs: 200
 time: null
@@ -24,7 +24,7 @@ single_cls: false
 rect: false
 cos_lr: true
 close_mosaic: 15
-resume: false
+resume: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training\yolo26m_5classes\weights\last.pt
 amp: true
 fraction: 1.0
 profile: false

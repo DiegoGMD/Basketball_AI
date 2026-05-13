@@ -417,9 +417,8 @@ class ModelEvaluator:
 class PerformanceInsights:
     """Generates human-readable performance explanations."""
     
-    def __init__(self, training_summary, validation_results=None):
+    def __init__(self, training_summary):
         self.training_summary = training_summary
-        self.validation_results = validation_results
     
     def generate_report(self):
         """Generate comprehensive performance report."""

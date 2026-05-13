@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-05-08T12:56:35.520017",
+  "timestamp": "2026-05-13T08:35:08.785662",
   "model": "basketball_training/yolo26m_5classes/weights/best.pt",
-  "summary": "Training completed in 13.5 hours (11 epochs).\nBest performance achieved at epoch 11.\n\nKey Metrics:\n- mAP@50: 0.8213 (mean average precision at 50% IoU)\n- mAP@50-95: 0.5008 (mAP across all IoU thresholds)\n- Precision: 0.7924 (accuracy of positive predictions)\n- Recall: 0.7624 (completeness of detections)\n\nFinal Loss: 1.3874",
+  "summary": "Training completed in 72.0 hours (62 epochs).\nBest performance achieved at epoch 62.\n\nKey Metrics:\n- mAP@50: 0.9457 (mean average precision at 50% IoU)\n- mAP@50-95: 0.7153 (mAP across all IoU thresholds)\n- Precision: 0.9152 (accuracy of positive predictions)\n- Recall: 0.8971 (completeness of detections)\n\nFinal Loss: 0.9598",
   "strengths": [
-    "\u2705 Excellent precision: mAP@50-95 = 0.5008 indicates strong overall detection accuracy",
-    "\u2705 High recall: 0.7624 - model captures most objects in images",
-    "\u2705 High precision: 0.7924 - low false positive rate",
-    "\u2705 Low validation loss: 1.3874 - good convergence"
+    "\u2705 Excellent precision: mAP@50-95 = 0.7153 indicates strong overall detection accuracy",
+    "\u2705 High recall: 0.8971 - model captures most objects in images",
+    "\u2705 High precision: 0.9152 - low false positive rate",
+    "\u2705 Low validation loss: 0.9598 - good convergence"
   ],
   "weaknesses": [
     "No major weaknesses detected"

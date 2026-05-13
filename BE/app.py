@@ -44,9 +44,9 @@ class Config:
     # Physics & Rules (Time in seconds)
     SHOT_COOLDOWN = 1     # if the model recognizes a shot,  it waits 0.5 seconds before counting another.
                             # Prevente a single shot from being counted 10 times in 10 consecutive frames 
-                            # If is too low, might activate the basket with no shot detector  
+                            # If is too low, might activate the basket with no shot detector
 
-    BASKET_COOLDOWN = 2.0   # the same for the basket recognition
+    BASKET_COOLDOWN = 1.0   # the same for the basket recognition
     ANIMATION_DURATION = 1
 
     # Confidence Thresholds
@@ -627,8 +627,8 @@ class MinimapRenderer:
                 continue
 
             # Only project objects that are on the floor (players and ball)
-            # Skip cls 1 (ball in basket), 3 (basket) — they are elevated
-            if cls not in (0, 2, 4):
+            # Skip cls 0 (ball), cls 1 (ball in basket), 3 (basket) — they are elevated or difficult to draw precisely
+            if cls not in (2, 4):
                 continue
 
             x1, y1, x2, y2 = box
@@ -644,9 +644,7 @@ class MinimapRenderer:
 
             court_pos = MinimapRenderer.project_point((foot_x, foot_y), H, scale=homography_scale)
             if court_pos is None:
-                # if cls == 0: # The ball in trajectory is ususlly not detected
-                #     print(f"[minimap] Missing ball → project_point returned None")
-                if cls != 0:
+                if cls in (2, 4):
                     print(f"[minimap] cls={cls} foot=({foot_x:.0f},{foot_y:.0f}) → project_point returned None")
                 continue
 
@@ -654,7 +652,7 @@ class MinimapRenderer:
 
             # Draw the dot
             color     = Config.COLORS.get(cls, (200, 200, 200))
-            dot_size  = 6 if cls in (2, 4) else 4  # players bigger than ball
+            dot_size  = 6  # players dot size
 
             cv2.circle(mm, mm_px, dot_size + 2, (0, 0, 0), -1)    # black outline
             cv2.circle(mm, mm_px, dot_size,     color,     -1)
