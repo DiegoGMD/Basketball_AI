@@ -19,6 +19,7 @@ import torch
 from pathlib import Path
 from datetime import datetime
 from ultralytics import YOLO
+from metrics import TrainingAnalyzer
 
 # ==============================================================================
 # 1. CONFIGURATION CLASS
@@ -32,13 +33,15 @@ class Config:
     PROJECT_NAME = r"C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training"
     RUN_NAME = "yolo26m_5classes"
     DATASET_DIR = Path("basketball-detection-srfkd-1")
-    DATA_YAML = "data_basketball.yaml"
+    DATA_YAML = "data.yaml"
     BASE_MODEL = "yolo26m.pt"  # Starting point (Pre-trained: YOLO SMALL)
-    # BASE_MODEL = r"C:\Users\NewUser\Documents\basketball_weights\best.pt" # Recicle on a new machine
+    # BASE_MODEL = r"C:\Users\NewUser\Documents\basketball_training\weights\best.pt" # Recicle on a new machine
     
     # --- Checkpoint Handling ---
     RESUME_PATH = Path(f"{PROJECT_NAME}/{RUN_NAME}/weights/last.pt")
-    # RESUME_PATH = Path(r"C:\Users\NewUser\Documents\basketball_weights\last.pt") # Recicle on a new machine
+    # RESUME_PATH = Path(r"C:\Users\NewUser\Documents\basketball_training\weights\last.pt") # Recicle on a new machine
+    RESULTS_CSV = Path(f"{PROJECT_NAME}/{RUN_NAME}/results.csv")
+    # RESUME_PATH = Path(r"C:\Users\NewUser\Documents\basketball_training\results.csv") # Recicle on a new machine
     
     # --- Hardware & System ---
     WORKERS = 0             # How many processors load the images (Set to 0 for Windows compatibility to avoid multiprocessing errors)
@@ -243,6 +246,13 @@ class TrainingSession:
             
         def on_train_epoch_end(trainer):
             logger.log_metrics(trainer.epoch + 1, trainer.epochs, trainer.metrics)
+
+            # Run metrics snapshot every SAVE_PERIOD epochs
+            if (trainer.epoch + 1) % Config.SAVE_PERIOD == 0:
+                if Config.RESULTS_CSV.exists():
+                    print(f"\n📈 [Checkpoint Metrics — Epoch {trainer.epoch + 1}]")
+                    analyzer = TrainingAnalyzer(Config.RESULTS_CSV)
+                    analyzer.print_summary(brief=True)
             
         def on_train_start(trainer):
             logger.start_session()

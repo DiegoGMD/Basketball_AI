@@ -1,4 +1,4 @@
-"""
+"""get_summary
 🏀 BASKETBALL DETECTION - MODEL PERFORMANCE METRICS
 =============================================================
 This script analyzes and explains the performance of trained YOLO models.
@@ -24,7 +24,7 @@ class MetricsConfig:
     MODEL_PATH = Path(f"{PROJECT_NAME}/{RUN_NAME}/weights/best.pt")
     RESULTS_CSV = Path(f"{PROJECT_NAME}/{RUN_NAME}/results.csv")
     DATASET_DIR = Path("basketball-detection-srfkd-1")
-    DATA_YAML = DATASET_DIR / "data_basketball.yaml"
+    DATA_YAML = DATASET_DIR / "data.yaml"
     OUTPUT_DIR = Path("metrics_reports")
     
 # Create output directory
@@ -115,15 +115,17 @@ class TrainingAnalyzer:
         }
         return summary
     
-    def print_summary(self):
+    def print_summary(self, brief=False):
         """Print formatted training summary."""
         summary = self.get_summary()
         if summary is None:
             return
             
-        print("\n" + "="*70)
-        print("📊 TRAINING SUMMARY")
-        print("="*70)
+        if not brief:
+            print("\n" + "="*70)
+            print("📊 TRAINING SUMMARY")
+            print("="*70 + "\n")
+
         print(f"Total Epochs:           {summary['total_epochs']}")
         print(f"Total Training Time:    {summary['total_time_hours']:.1f} hours")
         print(f"Avg Time per Epoch:     {summary['avg_epoch_time_min']:.1f} min")
@@ -239,7 +241,7 @@ class TrainingAnalyzer:
         print(f"✅ Saved: {save_path}")
         plt.close()
     
-    def plot_overfitting_analysis(self):
+    def plot_fit_analysis(self):
         """Analyze overfitting AND underfitting patterns."""
         if self.df is None:
             return
@@ -766,7 +768,7 @@ def main():
     if training_summary:
         print("📈 Generating training visualization charts...")
         trainer.plot_training_curves()
-        trainer.plot_overfitting_analysis()
+        trainer.plot_fit_analysis()
 
         # ── Dedicated fit diagnostics ──────────────────────────────────────
         print("\n🩺 Running fit diagnostics...")

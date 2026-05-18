@@ -1,7 +1,7 @@
 task: detect
 mode: train
 model: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training\yolo26m_5classes\weights\last.pt
-data: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball-detection-srfkd-1\data_basketball.yaml
+data: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball-detection-srfkd-1\data.yaml
 epochs: 200
 time: null
 patience: 40
