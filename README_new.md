@@ -6,7 +6,12 @@
 
 # 🏀 SwishAI - Basketball Shot Analysis & Tracking
 
-SwishAI is a Computer Vision application designed to analyze basketball shots from video footage automatically. Powered by YOLOv11 and a modern React + FastAPI stack, it tracks players, basketballs, and hoops in real-time, calculating shooting percentage and visualizing successful shots with dynamic overlays.
+## Idiomas
+[![en](https://img.shields.io/badge/lang-en-red.svg)](README.md)
+[![es](https://img.shields.io/badge/lang-es-yellow.svg)](README.es.md)
+
+
+SwishAI is a Computer Vision application designed to analyze basketball shots from video footage automatically. Powered by YOLOv26 and a modern React + FastAPI stack, it tracks players, basketballs, and hoops in real-time, calculating shooting percentage and visualizing successful shots with dynamic overlays.
 
 ---
 
@@ -48,8 +53,8 @@ SwishAI is a Computer Vision application designed to analyze basketball shots fr
   - **Stats & Effects**: Clean view with only scoring effects and a minimal HUD.
   - **Stats Only**: Minimalist overlay.
 - **Performance Optimization**: Includes a "Test Mode" (processes only the first 15s) and auto-cleanup mechanisms to manage server storage.
-- **Image Calibrator**: Incudes a program to camibrate the homography of the court so the minimap works acuretely and displays the classes 
-                        on their correct location.
+- - **Image Calibrator**: Includes a calibration program to compute the court homography so the minimap accurately projects detected players to their real-world positions.
+- - **CSV Export**: After processing, a per-player stats file (`player_id, shots, baskets, accuracy_pct, shot_positions`) is automatically generated and bundled with the output video.
 - **Metrics Program**: There is a program to analize how well the AI is doing in the terminal   
 
 ---
@@ -116,7 +121,7 @@ Watch a full demonstration of SwishAI in action:
    - **Advanced Settings**: Click "Advanced" to tweak confidence thresholds for specific classes (e.g., lower "Ball" threshold for dark videos).
    - **Test Mode**: Check "Test Mode" to process only the first 15 seconds. Useful to check if the model works properly.
 4. **Start Analysis**: Click the Start Analysis button. You will see a real-time progress bar and stats updating as the backend processes the video.
-5. **Download**: Once complete, download the rendered video with overlays.
+5. **Download**: Once complete, click **Download Result** to get a ZIP archive containing the processed video and a per-player stats CSV.
 
 ---
 
@@ -149,8 +154,9 @@ SwishAI/
 │   ├── basketball_training/      # Training scripts & artifacts
 │   │   ├── weights/              # Stores best.pt after training
 │   │   └── data_basketball.yaml  # Dataset configuration
-│   ├── processed/                # Output videos (Auto-cleaned)
+│   ├── processed/                # Output videos + CSV stats (Auto-cleaned)
 │   ├── uploads/                  # Raw user uploads (Auto-cleaned)
+│   ├── tracker/                  # botsort.yaml, minimap.png, homography.npy
 │   ├── app.py                    # FastAPI Server & Business Logic
 │   ├── train_model.py            # YOLO Training Script
 │   └── requirements.txt          # Python dependencies
@@ -274,8 +280,8 @@ This script handles auto-validation, GPU checks, and custom augmentation.
 
 To prevent double-counting, the system implements physics-based cooldown logic (`app.py`):
 
-- **Shot Cooldown (1.5s)**: Prevents the model from registering multiple shots for a single throwing motion.
-- **Basket Cooldown (1.5s)**: Ensures the ball swishing through the net isn't counted twice in consecutive frames.
+- **Shot Cooldown (1s)**: Prevents the model from registering multiple shots for a single throwing motion.
+- **Basket Cooldown (1s)**: Ensures the ball swishing through the net isn't counted twice in consecutive frames.
 
 ### Custom Augmentation Strategy
 
@@ -293,7 +299,7 @@ The training script (`train_model.py`) uses specialized augmentation for sports 
 | 1  | Ball in Basket   | 0.25               |
 | 2  | Player           | 0.70               |
 | 3  | Basket           | 0.70               |
-| 4  | Player Shooting  | 0.77               |
+| 4  | Player Shooting  | 0.70               |
 
 ---
 
@@ -380,7 +386,7 @@ The `train_model.py` script includes:
 - **Custom augmentation pipeline** tailored for basketball footage (HSV saturation, shear, mixup)
 - **Automatic validation split** (80/20 train/val)
 - **Early stopping** and checkpoint saving
-- **Mixed precision training** (FP16) for faster training on lied VRAM
+- **Mixed precision training** (FP16) for faster training on limited VRAM
 
 > **Note on Model Improvement**: The current model achieves strong performance for real-time basketball analysis. However, further improvements are possible through:
 > - Extended training (300+ epochs)
@@ -397,7 +403,7 @@ The `train_model.py` script includes:
 
 - **Original Work**: sPappalard
 - **Developer**: DiegoGMD
-- **Dataset**: [Roboflow Universe - Basketball Detection](https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd)
+- **Dataset**: [Roboflow Universe - Basketball Detection](https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd) + Custom Dataset
 - **Frameworks**: Ultralytics YOLO, FastAPI, React
 
 ### Dataset Citation
@@ -414,7 +420,7 @@ The `train_model.py` script includes:
     publisher = { Roboflow },
     year = { 2025 },
     month = { mar },
-    note = { visited on 2025-11-30 },
+    note = { visited on 19/05/2026 },
 }
 ```
 
@@ -435,11 +441,3 @@ This project integrates **Ultralytics YOLO**, which is licensed under AGPL-3.0. 
 Copyright (c) 2025 sPappalard.
 
 ---
-<!--
-
-My notes
-- Export model:
-https://docs.ultralytics.com/es/modes/export/#what-do-the-output-tensors-represent-in-exported-yolo-models
-
-Epoch 75 last before dataset update
--->

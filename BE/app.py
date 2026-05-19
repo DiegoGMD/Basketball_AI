@@ -1,3 +1,21 @@
+"""
+Basketball AI Tracker — FastAPI backend.
+
+Pipeline:
+    1. Client uploads a video → /upload  (stores it under uploads/)
+    2. Client starts processing → /process/{file_id}  (spawns a background thread)
+    3. Client polls → /status/{file_id}  (progress + live stats)
+    4. Client downloads → /download-zip/{file_id}  (processed video + CSV in a zip)
+
+Key components:
+    Config          - all tunable constants in one place
+    AutoCleanup     - daemon thread that deletes files older than RETENTION_SECONDS
+    GameStats       - shot/basket accounting with per-player breakdown
+    Visualizer      - OpenCV drawing helpers (HUD, effects, summary screen)
+    MinimapRenderer - projects detections onto a 2-D court image via homography
+    VideoProcessor  - frame-by-frame YOLO inference + writing the output video
+"""
+
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -13,7 +31,9 @@ from collections import deque, defaultdict
 from enum import Enum
 import time
 import json     # Added to parse custom thresholds
-import csv      # Added to make the resulting csv for the training session 
+import csv      # Added to make the resulting csv for the training session
+import zipfile  # Added to give the video and the report csv in one file
+import io
 
 # ==================== CONFIGURATION ====================
 class Config:
@@ -286,8 +306,20 @@ class GameStats:
             self.player_stats[track_id] = PlayerStats()
         return self.player_stats[track_id]
 
-    # called when the model recognised a player shooting
     def register_shot(self, frame_idx, track_id: int | None = None, court_pos: tuple | None = None):
+        """
+        Record a shot attempt if the cooldown has elapsed.
+
+        Args:
+            frame_idx:  Current frame number (used to enforce the cooldown).
+            track_id:   Tracker ID of the shooting player; Stored so the next
+                        basket can be credited to the right person.
+            court_pos:  (x_cm, y_cm) on the real court, appended to the player's
+                        shot-position list.
+        Returns:
+            True if the shot was registered, False if still in cooldown.
+        """
+
         if frame_idx - self.last_shot_frame >= self.shot_cooldown_frames:
             self.shots_attempted += 1
             self.last_shot_frame = frame_idx
@@ -302,8 +334,21 @@ class GameStats:
             return True
         return False
 
-    # called when the model recognised the ball in the basket
     def register_basket(self, frame_idx, position=None):
+        """
+        Record a made basket if the cooldown has elapsed.
+
+        If a basket is detected without a recent shot (AI missed the shooting
+        pose), a shot is auto-added so that baskets never exceed attempts.
+        The basket is credited to the last known shooter (_last_shooter_id).
+
+        Args:
+            frame_idx: Current frame number.
+            position:  Pixel (cx, cy) of the basket, used for the score animation.
+        Returns:
+            True if the basket was registered, False if still in cooldown.
+        """
+
         if frame_idx - self.last_basket_frame >= self.basket_cooldown_frames:
             # If there was no recent shot, auto-add one (AI missed the shooting pose)
             if (frame_idx - self.last_shot_frame) > (self.shot_cooldown_frames * 2):
@@ -342,6 +387,8 @@ class GameStats:
         return (self.baskets_made / self.shots_attempted) * 100
 
     def get_animation_progress(self, current_frame):
+        """Return 0.0–1.0 progress through the basket animation, or 0.0 if inactive."""
+        
         if current_frame not in self.animation_frames: return 0.0
         delta = current_frame - self.last_basket_frame
         return min(1.0, delta / self.anim_duration_frames)
@@ -872,7 +919,7 @@ class VideoProcessor:
                 cv2.line(final_frame, (w, STATS_H), (FINAL_W, STATS_H), (255,255,255), 2)
 
                 # --- BETA DISCLAIMER (top-left corner) ---
-                disclaimer_text = "TEST VIDEO"
+                disclaimer_text = "TEST VIDEO\nProgram in development"
                 disclaimer_font = cv2.FONT_HERSHEY_SIMPLEX
                 disclaimer_scale = 0.55
                 disclaimer_thickness = 1
@@ -931,7 +978,18 @@ class VideoProcessor:
 
     # Used to understand what is happening in the game and update the score
     def _process_detections(self, results, stats, frame_idx):
-        # If the model didn't see anything in this frame (black or blank screen), exit immediately to save time.
+        """
+        Parse YOLO detections for a single frame and update GameStats.
+
+        Logic:
+        - cls 3 (Basket):           updates last_known_basket_pos for animation anchoring.
+        - cls 4 (Player Shooting):  calls stats.register_shot(); resolves the shooter's
+                                    track ID via IoU overlap with cls-2 player boxes.
+        - cls 1 (Ball in Basket):   calls stats.register_basket().
+        
+        Detections below their class confidence threshold are ignored.
+        """
+
         if not results[0].boxes: return
 
         boxes_data = results[0].boxes
@@ -1019,8 +1077,17 @@ class VideoProcessor:
                 target_pos = stats.last_known_basket_pos or center
                 stats.register_basket(frame_idx, target_pos)
 
-    # Used to show the human what the model sees. Draw the colored rectangles.
     def _draw_yolo_boxes(self, frame, results):
+        """
+        Draw coloured bounding boxes and labels on *frame* for all detections
+        that exceed their class confidence threshold.
+
+        Players (cls 2) and Player Shooting (cls 4) are labelled with their
+        tracker ID (e.g. "#3 Player 0.82"). Shooting players without a tracker
+        ID are assigned one by finding the cls-2 player box with the highest
+        IoU overlap.
+        """
+
         if not results[0].boxes: return
 
         boxes_data = results[0].boxes
@@ -1091,8 +1158,16 @@ class VideoProcessor:
             cv2.putText(frame, label, (x1 + 2, y1 - baseline - 3),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
-    # Draw motion trail polylines for each tracked object (from tracking_test.py)
     def _draw_tracking_trails(self, frame, results):
+        """
+        Draw motion-trail polylines for each tracked object.
+
+        The last 30 centre-points of every tracked detection are stored in
+        self.track_history[track_id] and connected with a coloured polyline.
+        Shooting players (cls 4) without their own tracker ID borrow the ID
+        of the overlapping cls-2 player (same IoU logic as _draw_yolo_boxes).
+        """
+
         if not results or results[0] is None:
             return
         boxes_data = results[0].boxes
@@ -1158,8 +1233,14 @@ class VideoProcessor:
                 points = np.hstack(track).astype(np.int32).reshape((-1, 1, 2))
                 cv2.polylines(frame, [points], isClosed=False, color=color, thickness=3)
 
-    # Used to update the status and the progress bar.
     def _update_status(self, status, current, total, stats):
+        """
+        Write the current processing state into the shared processing_status dict.
+        
+        The frontend polls /status/{file_id} which reads this dict directly.
+        Fields: status, progress (frame count), total, percentage (0-100), stats summary.
+        """
+
         processing_status[self.file_id] = {
             "status": status,
             "progress": current,
@@ -1182,6 +1263,8 @@ def home(): return {"message": "Basketball AI Tracker is Running", "docs": "/doc
 
 @app.post("/upload")
 async def upload_video(file: UploadFile = File(...)):
+    """Accept a video file, save it with a UUID filename, return the file_id."""
+
     if not file.content_type.startswith("video/"): raise HTTPException(400, "File must be a video.")
     file_id = str(uuid.uuid4())
     ext = Path(file.filename).suffix
@@ -1191,6 +1274,8 @@ async def upload_video(file: UploadFile = File(...)):
 
 @app.post("/process/{file_id}")
 async def start_process(file_id: str, test_mode: bool = False, mode: ProcessingMode = ProcessingMode.FULL_TRACKING, thresholds: str = None):
+    """Return the current processing status dict for a given file_id."""
+
     input_files = list(Config.UPLOAD_DIR.glob(f"{file_id}.*"))
     if not input_files: raise HTTPException(404, "Video not found.")
     
@@ -1212,10 +1297,14 @@ async def start_process(file_id: str, test_mode: bool = False, mode: ProcessingM
     return {"status": "started", "file_id": file_id, "mode": mode}
 
 @app.get("/status/{file_id}")
-def get_status(file_id: str): return processing_status.get(file_id, {"status": "not_found"})
+def get_status(file_id: str):
+    """Return the current processing status dict for a given file_id."""
+    return processing_status.get(file_id, {"status": "not_found"})
 
 @app.post("/stop/{file_id}")
 def stop_process(file_id: str):
+    """Signal the processing thread to stop early by setting a stop flag."""
+    
     if file_id in processing_status and processing_status[file_id]['status'] == 'processing':
         stop_flags[file_id] = True
         return {"message": "Stopping..."}
@@ -1223,6 +1312,8 @@ def stop_process(file_id: str):
 
 @app.get("/download/{file_id}")
 def download_result(file_id: str):
+    """Stream the processed MP4 video file to the client."""
+
     path = Config.PROCESSED_DIR / f"{file_id}_processed.mp4"
     if not path.exists(): raise HTTPException(404, "File not ready.")
     
@@ -1232,10 +1323,38 @@ def download_result(file_id: str):
 
 @app.get("/download-csv/{file_id}")
 def download_csv(file_id: str):
+    """Stream the per-player stats CSV file to the client."""
+
     path = Config.PROCESSED_DIR / f"{file_id}_stats.csv"
     if not path.exists():
         raise HTTPException(404, "CSV not ready or processing incomplete.")
     return FileResponse(path, media_type="text/csv", filename=f"basket_stats_{file_id}.csv")
+
+@app.get("/download-zip/{file_id}")
+def download_zip(file_id: str):
+    """Stream the processed MP4 video file and the per-player stats CSV file to the client."""
+
+    video_path = Config.PROCESSED_DIR / f"{file_id}_processed.mp4"
+    csv_path = Config.PROCESSED_DIR / f"{file_id}_stats.csv"
+    if not video_path.exists or not csv_path.exists():
+        raise HTTPException(404, "Files not ready")
+    
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(video_path, "B_AI Demo - Video.mp4")
+        zf.write(csv_path, "B_AI Demo - Report.csv")
+    buf.seek(0)
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        buf, 
+        media_type="application/zip"
+        ,headers={
+            "Content-Disposition": "attachment;"
+            "filename=B_AI_Demo.zip"
+        }
+    )
+
 
 if __name__ == "__main__":
     print("\n🏀 SERVER STARTING...")

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Play, Square, Download, Activity, CheckCircle, AlertCircle, Video, Settings, Info, RefreshCw, Github, Database, Sun, Clock, X, RotateCcw, Save } from 'lucide-react';
+import { Upload, Play, Square, Download, Activity, CheckCircle, AlertCircle, Video, Settings, Info, RefreshCw, Github, Database, Sun, Clock, X, RotateCcw, Save, Cog, SlidersHorizontal } from 'lucide-react';
 
 const API_URL = 'http://localhost:8000'; // Change if deployed
 
@@ -168,8 +168,7 @@ export default function App() {
   };
 
   const handleDownload = () => {
-    downloadVideo();
-    downloadStatsFile();
+    window.open(`${API_URL}/download-zip/${fileId}`, '_blank');
   };
 
   // Graphic Interface (JSX)
@@ -267,7 +266,7 @@ export default function App() {
                <Info size={20} />
                <h3 className="font-bold text-sm uppercase tracking-wide">For Best Results</h3>
              </div>
-             <div className="grid md:grid-cols-3 gap-6">
+             <div className="grid md:grid-cols-2 gap-6">
                <div className="flex items-start gap-3">
                  <div className="bg-slate-700 p-2 rounded-lg text-yellow-400"><Sun size={20} /></div>
                  <div>
@@ -279,7 +278,7 @@ export default function App() {
                  <div className="bg-slate-700 p-2 rounded-lg text-green-400"><Video size={20} /></div>
                  <div>
                    <p className="font-bold text-sm">Clear View</p>
-                   <p className="text-xs text-slate-400 mt-1">The camera must clearly see the hoop and the shooter.</p>
+                   <p className="text-xs text-slate-400 mt-1">The camera must clearly see the hoop the shooter and the reference points.</p>
                  </div>
                </div>
                <div className="flex items-start gap-3">
@@ -287,6 +286,13 @@ export default function App() {
                  <div>
                    <p className="font-bold text-sm">Max Duration</p>
                    <p className="text-xs text-slate-400 mt-1">Videos limited to 3 minutes (180s) for optimal processing.</p>
+                 </div>
+               </div>
+               <div className="flex items-start gap-3">
+                 <div className="bg-slate-700 p-2 rounded-lg text-cyan-400"><SlidersHorizontal size={20} /></div>
+                 <div>
+                   <p className="font-bold text-sm">Good Calibration</p>
+                   <p className="text-xs text-slate-400 mt-1">Calibrate in order to have a proper response from the minimap.</p>
                  </div>
                </div>
              </div>
@@ -491,10 +497,12 @@ export default function App() {
           </p>
           <div className="flex items-center gap-4">
             <a href="https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
-              <Database size={14} /> Roboflow Dataset
+              <Database size={14} /> Roboflow Dataset +  Custom Dataset
             </a>
+            {/* 
             <span className="text-slate-700">|</span>
             <span>v1.0.1?</span>
+            */}
           </div>
         </div>
       </footer>
