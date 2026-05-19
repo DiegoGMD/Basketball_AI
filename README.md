@@ -1,781 +1,448 @@
-# 🏀 SwishAI - Basketball Shot Analysis & Tracking
+# Basketball AI Tracker
 
-<div align="center">
-  <img src="FE/public/logo.png" alt="SwishAI Logo" width="200">
-  
-  **A Computer Vision application for automated basketball shot analysis using YOLOv11**
-  
-  [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE.txt)
-  [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-  [![React 19](https://img.shields.io/badge/React-19.1-61dafb)](https://react.dev/)
-  [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)](https://fastapi.tiangolo.com/)
-</div>
+[![en](https://img.shields.io/badge/lang-en-blue.svg)](README.md)
+[![es](https://img.shields.io/badge/lang-es-red.svg)](README.es.md)
 
----
+> [!NOTE] This is repository a slight modification of sPappalard's one named [SwishAI](https://github.com/sPappalard/SwishAI/tree/master)
 
+A comprehensive computer vision system for real-time basketball training analysis and player tracking. This project combines deep learning object detection with video processing to automatically identify players, basketballs, and court elements, providing detailed training statistics and visual analytics.
 
+## Overview
 
-## 📋 Table of Contents
+Basketball AI Tracker uses YOLO (You Only Look Once) neural networks to detect and track basketball players and balls in training videos. The system processes video frames in real-time, generates annotated output videos with tracking overlays, produces a basketball court minimap visualization, and exports detailed training statistics in CSV format.
 
-- [Overview](#-overview)
-- [Key Features](#-key-features)
-- [Screenshots](#-screenshots)
-- [Quick Start](#-quick-start)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [Installation](#️-installation)
-- [Usage Guide](#-usage-guide)
-- [Technical Details](#-technical-details)
-- [Model Performance](#-model-performance)
-- [Configuration](#-configuration)
-- [Troubleshooting](#-troubleshooting)
-- [Credits](#-credits)
-- [License](#-license)
+**Key Capabilities:**
+- Real-time detection of players, basketballs, and court elements
+- Multi-player tracking across frames
+- Automatic shot and basket counting
+- Live training statistics (per-player breakdown)
+- Court minimap visualization with homography transformation
+- Video output with HUD (heads-up display) and performance effects
+- Batch processing with progress tracking
+- Automatic cleanup of processed files
 
----
-
-## 🎯 Overview
-
-SwishAI is an intelligent computer vision system that automatically analyzes basketball games from video footage. It detects players, basketballs, hoops, and shooting poses in real-time, tracking shot attempts and successful baskets to calculate field goal percentages. The system provides customizable processing modes with visual effects and generates detailed per-player statistics.
-
-**Key Highlights:**
-- Real-time object detection using YOLOv11s
-- Automatic shot tracking and basket counting
-- Per-player statistics generation
-- Three processing modes (Full Tracking, Stats & Effects, Stats Only)
-- Confidence threshold adjustment for different lighting conditions
-- Court homography for accurate positional mapping
-
----
-
-## ✨ Key Features
-
-### Object Detection
-- **5 Detection Classes**: Ball, Ball in Basket, Player, Basket, Player Shooting
-- **Real-time Performance**: Optimized for consumer-grade GPUs
-- **Custom Augmentation**: Specialized for sports footage and motion tracking
-
-### Smart Scoring System
-- **Automatic Shot Detection**: Identifies shooting poses and shot attempts
-- **Basket Counting**: Tracks successful shots with cooldown logic to prevent double-counting
-- **Field Goal Percentage**: Real-time calculation of shooting accuracy
-- **Per-Player Statistics**: Breakdown by player ID with shot positions
-
-### Visual Features
-- **Dynamic Overlays**: Real-time bounding boxes and tracking annotations
-- **Pulse Effects**: Visual feedback when baskets are scored
-- **Court Minimap**: Bird's-eye view projection using court homography
-- **Customizable HUD**: Toggle between different visualization levels
-
-### Processing Modes
-1. **Full Tracking**: Bounding boxes + Visual Effects + Complete HUD
-2. **Stats & Effects**: Clean visualization with scoring effects only
-3. **Stats Only**: Minimal overlay with essential statistics
-
-### Optimization & Utilities
-- **Test Mode**: Process only first 15 seconds for quick validation
-- **Auto-Cleanup**: Automatic deletion of old files to manage storage
-- **Batch Processing**: Built-in handling for multiple videos
-- **CSV Export**: Per-player statistics bundled with output
-
----
-
-## 📸 Screenshots
-
-<div align="center">
-  <img src="FE/public/1.png" alt="Main Upload Interface" width="700">
-  <p><em>Upload interface with processing mode selection</em></p>
-</div>
-
-<div align="center">
-  <img src="FE/public/2.png" alt="Advanced Settings" width="700">
-  <p><em>Confidence threshold configuration for each detection class</em></p>
-</div>
-
-<div align="center">
-  <img src="FE/public/5.png" alt="Processing Progress" width="700">
-  <p><em>Real-time progress tracking with live statistics</em></p>
-</div>
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+ & npm
-- NVIDIA GPU (recommended; CPU mode available but slow)
-- 4GB+ RAM
-
-### 30-Second Setup
-
-```bash
-# Clone and navigate
-cd Basketball_AI
-
-# Backend setup
-cd BE
-python -m venv venv
-# Windows: .\venv\Scripts\activate
-# Mac/Linux: source venv/bin/activate
-pip install -r requirements.txt
-
-# Frontend setup (new terminal)
-cd FE
-npm install
-npm run dev
-
-# Start backend (in first terminal, from BE/)
-python app.py
-```
-
-Visit `http://localhost:5173` to access the app.
-
----
-
-## 🛠 Tech Stack
+## Technology Stack
 
 ### Backend
-| Component | Technology | Version |
-|-----------|-----------|---------|
-| **Framework** | FastAPI | 0.115.0 |
-| **Server** | Uvicorn | 0.32.0 |
-| **Deep Learning** | PyTorch | 2.5.1 |
-| **Object Detection** | Ultralytics YOLO | 8.3.223 |
-| **Computer Vision** | OpenCV | 4.10.0.84 |
-| **Data Processing** | NumPy, Pandas | Latest |
+- **Framework:** FastAPI 0.115.0 with Uvicorn
+- **Computer Vision:** YOLOv26 (via Ultralytics), OpenCV
+- **Deep Learning:** PyTorch 2.5.1 with CUDA support
+- **Data Processing:** NumPy, Pandas, scikit-learn
+- **Visualization:** Matplotlib, Seaborn
+- **Utilities:** Roboflow (dataset management), python-dotenv, PyYAML
 
 ### Frontend
-| Component | Technology | Version |
-|-----------|-----------|---------|
-| **Framework** | React | 19.1.1 |
-| **Build Tool** | Vite | 7.1.7 |
-| **Styling** | Tailwind CSS | 3.4.1 |
-| **Icons** | Lucide React | 0.552.0 |
+- **Framework:** React 19.1.1 with Vite
+- **Styling:** Tailwind CSS with PostCSS/Autoprefixer
+- **UI Components:** Lucide React (icons), React QR Code
+- **Linting:** ESLint
 
-### Development & Deployment
-- **GPU**: NVIDIA CUDA (recommended)
-- **Python Environment**: venv/conda
-- **Package Management**: pip, npm
-
----
-
-## 📂 Project Structure
+## Project Structure
 
 ```
 Basketball_AI/
+├── BE/                              # Backend (Python)
+│   ├── app.py                       # Main FastAPI application
+│   ├── train_model.py               # YOLO model training script
+│   ├── metrics.py                   # Training metrics and analysis
+│   ├── calibrate.py                 # Camera calibration utilities
+│   ├── basketball_training/         # Trained models directory
+│   │   └── yolo26s_5classes/        # Deployed model (5 detection classes)
+│   ├── tracker/                     # Tracking configs and court images
+│   │   ├── bytetrack.yaml           # ByteTrack configuration
+│   │   ├── botsort.yaml             # BoTSORT configuration (default)
+│   │   ├── minimap.png              # Court reference image
+│   │   └── homography.npy           # Homography transformation matrix
+│   ├── uploads/                     # User-uploaded videos (auto-created)
+│   ├── processed/                   # Processed output videos (auto-created)
+│   ├── requirements.txt             # Python dependencies
+│   └── venv/                        # Python virtual environment (created by setup)
 │
-├── BE/                                 # Backend (Python)
-│   ├── app.py                         # FastAPI server & main application logic
-│   ├── train_model.py                 # YOLO11 training script
-│   ├── calibrate.py                   # Court homography calibration tool
-│   ├── metrics.py                     # Model performance analysis
-│   ├── requirements.txt               # Python dependencies
-│   │
-│   ├── basketball_training/           # Training artifacts
-│   │   ├── yolo26m_5classes/         # Trained model (mAP50: 0.909)
-│   │   │   ├── weights/
-│   │   │   │   ├── best.pt           # Best model weights
-│   │   │   │   └── last.pt           # Latest checkpoint
-│   │   │   └── results.csv           # Training metrics
-│   │   └── yolo26s_5classes/         # Alternative model
-│   │       └── weights/
-│   │
-│   ├── tracker/                       # Multi-object tracking config
-│   │   ├── botsort.yaml              # BoTSORT tracker config
-│   │   ├── bytetrack.yaml            # ByteTrack tracker config
-│   │   ├── homography.npy            # Court transformation matrix
-│   │   └── minimap.png               # Court reference image
-│   │
-│   ├── basketball-detection-srfkd-1/  # Dataset (Roboflow)
-│   │   ├── data.yaml                 # Dataset configuration
-│   │   ├── train/                    # Training images & labels
-│   │   ├── valid/                    # Validation images & labels
-│   │   └── test/                     # Test images & labels
-│   │
-│   ├── uploads/                       # User-uploaded videos (auto-cleaned)
-│   ├── processed/                     # Output videos & stats (auto-cleaned)
-│   ├── metrics_reports/               # Performance analysis outputs
-│   └── runs/                          # YOLO validation results
-│
-├── FE/                                 # Frontend (React)
+├── FE/                              # Frontend (React)
 │   ├── src/
-│   │   ├── App.jsx                   # Main React component
-│   │   ├── App.css                   # Component styles
-│   │   ├── index.css                 # Global styles
-│   │   ├── main.jsx                  # Entry point
-│   │   └── assets/                   # Static resources
-│   │
-│   ├── public/                        # Static files
-│   │   ├── logo.png
-│   │   ├── 1.png - 7.png             # Screenshots
-│   │   └── *.png                     # Training metrics images
-│   │
-│   ├── package.json                   # Node dependencies
-│   ├── vite.config.js                 # Vite configuration
-│   ├── tailwind.config.js             # Tailwind CSS config
-│   ├── postcss.config.js              # PostCSS config
-│   └── index.html                     # HTML template
+│   │   ├── App.jsx                  # Main React component
+│   │   ├── App.css                  # Application styles
+│   │   ├── main.jsx                 # React entry point
+│   │   ├── index.css                # Global styles
+│   │   └── assets/                  # Static assets
+│   ├── public/                      # Public static files
+│   ├── package.json                 # Node dependencies
+│   ├── vite.config.js               # Vite configuration
+│   ├── tailwind.config.js           # Tailwind CSS configuration
+│   └── eslint.config.js             # ESLint configuration
 │
-├── README.md                           # This file
-├── LICENSE.txt                         # AGPL-3.0 License
-└── install_env.bat                     # Windows setup script
+├── install_env.bat                  # Windows environment setup script
+├── LICENSE / LICENSE.txt            # Project licensing
+└── README.md                        # Original documentation
 ```
 
----
+## Getting Started
 
-## ⚙️ Installation
+### Prerequisites
 
-### 1. Backend Setup
+- **Windows OS** (or Linux with minor modifications to setup script)
+- **Python 3.8+** (available in system PATH)
+- **Node.js 16+** (for frontend development)
+- **Optional:** NVIDIA GPU with CUDA 11.8+ (recommended for faster inference)
 
-#### Option A: Manual Setup
+### Installation
+
+#### 1. Backend Setup (Windows)
+
+Run the automated environment setup script:
+
+```bash
+install_env.bat
+```
+
+This script will:
+- Create a Python virtual environment
+- Detect your NVIDIA GPU and CUDA version
+- Install PyTorch with appropriate GPU support (or CPU if no GPU found)
+- Install all required dependencies
+- Verify the setup
+
+**Manual Setup (if needed):**
 
 ```bash
 cd BE
-
-# Create virtual environment
 python -m venv venv
-
-# Activate (choose your OS)
-# Windows:
 .\venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
-# Install dependencies
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-
-# Verify CUDA (GPU support) - optional but recommended
-python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
 ```
 
-#### Option B: Automated Setup (Windows)
-
-```bash
-cd ~
-.\install_env.bat
-```
-
-### 2. Frontend Setup
+#### 2. Frontend Setup
 
 ```bash
 cd FE
-
-# Install dependencies
 npm install
-
-# Verify installation
-npm run lint
 ```
 
-### 3. Dataset & Model Setup
+### Running the Application
 
-#### Using Pre-trained Weights
-
-The project includes pre-trained models in `BE/basketball_training/`:
-
-```bash
-# Default model (YOLOv11s, optimized for speed)
-# Located at: BE/basketball_training/yolo26s_5classes/weights/best.pt
-
-# Alternative model (YOLOv11m, higher accuracy)
-# Located at: BE/basketball_training/yolo26m_5classes/weights/best.pt
-```
-
-#### Training from Scratch
-
-1. **Download Dataset**
-   ```bash
-   # Get the Basketball Detection Dataset from Roboflow Universe
-   # https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd
-   # Extract to: BE/basketball-detection-srfkd-1/
-   ```
-
-2. **Configure Training** (BE/train_model.py)
-   ```python
-   class Config:
-       EPOCHS = 200          # Adjust based on your hardware
-       BATCH_SIZE = 8        # For 6GB VRAM; increase for better hardware
-       IMG_SIZE = 640
-       DEVICE = 0            # GPU index (0 = first GPU)
-       WORKERS = 0           # Keep 0 on Windows
-   ```
-
-3. **Run Training**
-   ```bash
-   cd BE
-   python train_model.py
-   ```
-
-#### Court Calibration
-
-Generate homography matrix for your specific court:
+#### Backend (API Server)
 
 ```bash
 cd BE
-python calibrate.py --video <path_to_video>
-```
-
-This creates:
-- `tracker/homography.npy` - Transformation matrix
-- `tracker/minimap.png` - Court reference image
-
----
-
-## 🎮 Usage Guide
-
-### Starting the Application
-
-**Terminal 1 - Backend:**
-```bash
-cd BE
-source venv/bin/activate  # or .\venv\Scripts\activate on Windows
+.\venv\Scripts\activate           # Activate virtual environment
 python app.py
 ```
-Server runs at `http://localhost:8000`
 
-**Terminal 2 - Frontend:**
+The FastAPI server will start at `http://localhost:8000`
+- API documentation: `http://localhost:8000/docs` (Swagger UI)
+- Alternative docs: `http://localhost:8000/redoc` (ReDoc)
+
+#### Frontend (Development Server)
+
 ```bash
 cd FE
 npm run dev
 ```
-App runs at `http://localhost:5173`
 
-### Processing a Video
+The Vite development server will start at `http://localhost:5173`
 
-1. **Open the App**
-   - Navigate to `http://localhost:5173`
+## Usage
+
+### Processing a Basketball Video
+
+1. **Open the Web Interface**
+   - Navigate to `http://localhost:5173` in your browser
 
 2. **Upload Video**
-   - Click upload area or drag-and-drop
-   - Supports: MP4, MOV, AVI (max 3 minutes, max 1920×1080)
+   - Select a basketball game or practice video
+   - The system generates a unique file ID for tracking
 
-3. **Configure Settings**
-   - **Processing Mode**: Choose visualization level
-   - **Advanced Settings** (optional):
-     - Adjust confidence thresholds for each class
-     - Lower thresholds for dim lighting, raise for bright conditions
-   - **Test Mode**: Check to process only first 15 seconds
+3. **Configure Detection (Optional)**
+   - Set custom confidence thresholds for different object classes
+   - Choose tracking algorithm (ByteTrack or BoTSORT)
 
-4. **Start Analysis**
-   - Click "Start Analysis"
-   - Real-time progress bar shows processing status
-   - Live statistics update as analysis progresses
+4. **Start Processing**
+   - Trigger the video processing pipeline
+   - The system runs YOLO inference on all frames
+   - Player and ball coordinates are tracked across frames
 
-5. **Download Results**
-   - ZIP file contains:
-     - `output_video.mp4` - Annotated video with overlays
-     - `player_stats.csv` - Per-player statistics
+5. **Monitor Progress**
+   - Poll the status endpoint for real-time progress updates
+   - Live statistics update as frames are processed
 
-### Output Files
+6. **Download Results**
+   - Download the processed video with tracking overlays and HUD
+   - Download the CSV report with per-frame and per-player statistics
 
-**CSV Format:**
-```csv
-player_id, shots, baskets, accuracy_pct, shot_positions_json
-1, 15, 9, 60.0, "[{x: 100, y: 200}, ...]"
-2, 12, 8, 66.7, "[{x: 150, y: 250}, ...]"
+### API Endpoints
+
+**Video Processing:**
+- `POST /upload` - Upload a video file
+- `POST /process/{file_id}` - Start background processing with custom parameters
+- `GET /status/{file_id}` - Get processing progress and live statistics
+- `GET /download-zip/{file_id}` - Download processed video + CSV report as zip
+
+**Model Management:**
+- `GET /models` - List available detection models
+- `GET /health` - System health check
+
+## Model Architecture
+
+The system uses YOLOv11 trained on basketball-specific datasets with 5 detection classes:
+
+1. **Player** - Basketball player
+2. **Ball** - Basketball
+3. **Hoop** - Basketball hoop/rim
+4. **Court** - Court boundaries/markings
+5. **Backboard** - Backboard structure
+
+### Training a Custom Model
+
+```bash
+cd BE
+.\venv\Scripts\activate
+python train_model.py
 ```
 
----
+The training script:
+- Automatically validates datasets
+- Verifies GPU hardware capabilities
+- Implements graceful interrupt handling (Ctrl+C)
+- Provides custom metrics visualization
+- Uses optimized hyperparameters for basketball motion tracking
 
-## 🧠 Technical Details
+**Configuration (edit `train_model.py`):**
+- `PROJECT_NAME` - Output directory for training runs
+- `RUN_NAME` - Identifier for this training session
+- `DATASET_DIR` - Path to your Roboflow dataset
+- `BASE_MODEL` - Starting model (yolo26s.pt, yolo26m.pt, yolo26l.pt)
+- `WORKERS` - Data loader workers (0 for Windows compatibility)
+- `DEVICE` - GPU index (0 for first GPU)
+- `SEED` - Random seed for reproducibility
 
-### Detection Classes
+## Pipeline Architecture
 
-| ID | Class | Function | Default Confidence |
-|----|-------|----------|-------------------|
-| 0 | Ball | Track basketball | 0.60 |
-| 1 | Ball in Basket | Detect successful shot | 0.25 |
-| 2 | Player | Identify all players | 0.70 |
-| 3 | Basket | Localize hoop | 0.70 |
-| 4 | Player Shooting | Identify shooter | 0.70 |
+### 1. Frame-by-Frame Processing
 
-### Physics & Cooldown Logic
-
-**Problem**: Single shooting motion detected in 10+ consecutive frames
-
-**Solution**: Temporal cooldown windows
-
-```python
-SHOT_COOLDOWN = 1.0     # seconds - wait after detecting a shot
-BASKET_COOLDOWN = 1.0   # seconds - wait after basket scoring
-ANIMATION_DURATION = 1  # seconds - pulse effect duration
+```
+Video Input
+    ↓
+[Split into Frames]
+    ↓
+[YOLO Detection] → Bounding boxes + confidence scores
+    ↓
+[Tracking] → Assign stable IDs across frames
+    ↓
+[Statistics] → Calculate shots, baskets, per-player metrics
+    ↓
+[Visualization] → Draw detections, HUD, minimap, effects
+    ↓
+[Write Frame] → Encode back into video
+    ↓
+Video Output (MP4)
 ```
 
-**How it works:**
-1. "Player Shooting" detected → start shot cooldown timer
-2. During cooldown, ignore new shot detections
-3. "Ball in Basket" detection → basket only counts if outside basket cooldown
-4. Prevent duplicate counting across frame boundaries
+### 2. Core Components
 
-### Custom Augmentation Strategy
+- **Config** - Centralized configuration management
+- **GameStats** - Accumulates shot/basket counts with per-player breakdown
+- **Visualizer** - OpenCV drawing utilities for HUD, effects, and court visualization
+- **MinimapRenderer** - Projects 2D detections onto court using homography transformation
+- **VideoProcessor** - Main pipeline: YOLO inference + output video encoding
+- **AutoCleanup** - Daemon thread for automatic cleanup of old processed files
 
-Training augmentation optimized for sports footage:
+## Configuration
 
-```python
-AUGMENTATION = {
-    # Color & Lighting
-    'hsv_h': 0.015,      # Hue variation (color shifts)
-    'hsv_s': 0.4,        # Saturation (orange ball in any light)
-    'hsv_v': 0.2,        # Value/brightness (shadows, flares)
-    
-    # Geometry & Position
-    'degrees': 10,       # Rotation (camera angles)
-    'translate': 0.1,    # Translation (object movement)
-    'scale': 0.5,        # Scaling (depth variation)
-    'shear': 2.0,        # Shearing (perspective)
-    
-    # Advanced
-    'flipud': 0.5,       # Vertical flip
-    'fliplr': 0.5,       # Horizontal flip
-    'mosaic': 1.0,       # Mosaic augmentation
-    'mixup': 0.15        # Mixup (blend images)
-}
-```
-
-**Why**: Sports videos have high motion, varied lighting, and crowded scenes.
-
-### Court Projection
-
-The minimap uses homography transformation to:
-1. Map 3D court coordinates to 2D video frame
-2. Project detected players onto bird's-eye court view
-3. Show real-time player positions and shot locations
-
-**Calibration Requirements:**
-- 4+ court corner points from reference image
-- Corresponding image coordinates
-- Generated transformation matrix (`homography.npy`)
-
----
-
-## 📊 Model Performance
-
-### Training Configuration
-
-**Hardware Used:**
-- GPU: NVIDIA GTX 1060 6GB
-- CPU: Intel i7-6700K
-- RAM: 16GB DDR4
-- Training Time: ~48 hours
-
-**Model Specifications:**
-- **Architecture**: YOLOv11s (small variant)
-- **Input Size**: 640×640 pixels
-- **Epochs**: 200
-- **Batch Size**: 8
-- **Optimizer**: AdamW with cosine decay
-- **Learning Rate**: 0.01 → 0.0005
-
-### Performance Metrics
-
-**Overall Accuracy** (Epoch 200):
-- **mAP50**: 0.909 (Mean Average Precision at IoU ≥ 0.5)
-- **mAP50-95**: 0.623 (Average across IoU thresholds)
-- **Precision**: 0.878
-- **Recall**: 0.861
-
-**Per-Class Performance:**
-
-| Class | Precision | Recall | mAP50 | Strength |
-|-------|-----------|--------|-------|----------|
-| Ball | 0.80 | 0.88 | 0.847 | Robust detection |
-| Ball in Basket | 0.51 | 0.36 | 0.932 | Rare but distinctive |
-| Player | 0.86 | 0.85 | 0.928 | Excellent tracking |
-| Basket | 0.91 | 0.91 | 0.966 | Very reliable |
-| Player Shooting | 0.76 | 0.34 | 0.873 | Rare pose |
-
-### Training Curves
-
-Training metrics visualizations available in `FE/public/`:
-- `results.png` - Loss curves (box, class, total)
-- `confusionMatrix.png` - Classification accuracy
-- `normalizedMatrix.png` - Normalized confusion matrix
-- `PR_curve.png` - Precision-recall tradeoff
-- `P_curve.png` - Precision vs confidence threshold
-- `R_curve.png` - Recall vs confidence threshold
-- `F1_curve.png` - F1-score optimization curve
-
-### Improving Model Performance
-
-For better accuracy with better hardware:
-
-```python
-# In train_model.py Config class:
-EPOCHS = 300              # Longer training
-BATCH_SIZE = 16           # Larger batches (RTX 3080+)
-BASE_MODEL = "yolo11m.pt" # Larger model (medium)
-# or
-BASE_MODEL = "yolo11l.pt" # Large model (24GB+ VRAM)
-```
-
-**Advanced Techniques:**
-- Extended training (300+ epochs)
-- Larger model variants (YOLOv11m, YOLOv11l)
-- Additional data augmentation
-- Fine-tuning on specific courts
-- Ensemble methods
-
----
-
-## ⚙️ Configuration
-
-### Backend Configuration (BE/app.py)
+Edit configuration values in `BE/app.py` (Config class):
 
 ```python
 class Config:
-    # Video constraints
-    MAX_DURATION_SECONDS = 180   # 3 minutes max
-    TEST_MODE_DURATION = 15      # Test mode length
+    # Path settings
+    UPLOAD_DIR = Path(__file__).parent / "uploads"
+    PROCESSED_DIR = Path(__file__).parent / "processed"
+    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26s_5classes" / "weights" / "best.pt"
     
-    # File retention (auto-cleanup)
-    RETENTION_SECONDS = 600      # 10 minutes
-    CLEANUP_INTERVAL = 60        # Check every 60s
+    # Processing settings
+    CONFIDENCE_THRESHOLD = 0.5        # YOLO confidence threshold
+    IOU_THRESHOLD = 0.45              # NMS IoU threshold
+    MAX_DETECTIONS = 100              # Maximum detections per frame
     
-    # Physics (in seconds)
-    SHOT_COOLDOWN = 1.0          # Shot detection debounce
-    BASKET_COOLDOWN = 1.0        # Basket detection debounce
-    ANIMATION_DURATION = 1       # Pulse effect length
-    
-    # Detection thresholds (0.0-1.0)
-    THRESHOLDS = {
-        0: 0.60,   # Ball
-        1: 0.25,   # Ball in Basket
-        2: 0.70,   # Player
-        3: 0.70,   # Basket
-        4: 0.70    # Player Shooting
-    }
-    
-    # Court dimensions (cm)
-    COURT_WIDTH_CM = 1500        # FIBA half-court width
-    COURT_HEIGHT_CM = 1400       # FIBA half-court depth
+    # File management
+    RETENTION_SECONDS = 3600          # Keep processed files for 1 hour
+    CLEANUP_INTERVAL = 60             # Check for cleanup every 60 seconds
 ```
 
-### Adjusting for Different Scenarios
+## Performance Optimization
 
-**Dim Lighting:**
-```python
-THRESHOLDS = {
-    0: 0.50,   # Lower ball threshold
-    1: 0.20,   # Lower basket threshold
-    2: 0.65,   # Slightly lower player
-    3: 0.65,
-    4: 0.65
-}
+### GPU Acceleration
+
+The `install_env.bat` script automatically detects and configures PyTorch for your NVIDIA GPU:
+
+- **CUDA 12.8+** → PyTorch with cu128 support
+- **CUDA 12.4-12.7** → PyTorch with cu124 support
+- **CUDA 11.8+** → PyTorch with cu118 support
+- **No GPU** → PyTorch CPU version
+
+### Model Selection
+
+Choose the appropriate model size based on your hardware:
+
+- `yolo26n.pt` - Nano (fastest, least accurate)
+- `yolo26s.pt` - Small (balanced, recommended)
+- `yolo26m.pt` - Medium (slower, more accurate)
+
+Adjust `MODEL_PATH` in Config to switch models.
+
+## Troubleshooting
+
+### Installation Issues
+
+**Python not found:**
+```
+Ensure Python is in your system PATH
+Run: python --version
 ```
 
-**Crowded Indoor Court:**
-```python
-SHOT_COOLDOWN = 0.8      # Faster shot detection
-BASKET_COOLDOWN = 1.2    # Slower basket debounce
-THRESHOLDS = {
-    2: 0.75,   # Higher player threshold
-    4: 0.75    # Stricter shooting pose
-}
+**Virtual environment creation fails:**
+```
+Check write permissions in the BE directory
+Delete any existing venv folder: rmdir /s /q BE\venv
+Retry the setup script
 ```
 
----
-
-## 🔧 Troubleshooting
-
-### Backend Issues
-
-**"CUDA not available"**
-```bash
-# Check GPU drivers
-nvidia-smi
-
-# Install CUDA-compatible PyTorch
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+**PyTorch GPU detection fails:**
+```
+Verify NVIDIA drivers: nvidia-smi
+Check CUDA compatibility: https://www.nvidia.com/drivers
+The system will fall back to CPU automatically
 ```
 
-**"Port 8000 already in use"**
-```bash
-# Linux/Mac: Kill process on port 8000
-lsof -i :8000 | grep LISTEN | awk '{print $2}' | xargs kill -9
+### Processing Issues
 
-# Windows: Use alternative port
-python app.py --port 8001
+**Out of memory error:**
+```
+Reduce frame resolution in Config
+Use a smaller model (yolo26n.pt or yolo26s.pt)
+Enable GPU memory optimization in app.py
 ```
 
-**"Model file not found"**
-- Verify `BE/basketball_training/yolo26s_5classes/weights/best.pt` exists
-- Download from original SwishAI repository if missing
+**Slow processing:**
+```
+Enable GPU acceleration (check nvidia-smi)
+Reduce input video resolution
+Decrease confidence threshold slightly
+```
 
 ### Frontend Issues
 
-**"Cannot connect to backend"**
-- Verify backend running: `http://localhost:8000/docs`
-- Check CORS settings in `BE/app.py`
-- Verify port 8000 is accessible
+**Cannot connect to API:**
+```
+Verify backend is running: http://localhost:8000/docs
+Check CORS configuration in app.py
+Ensure frontend is on http://localhost:5173
+```
 
-**"npm install fails"**
+## Development
+
+### Backend Development
+
 ```bash
-# Clear cache and retry
-npm cache clean --force
-rm -rf node_modules package-lock.json
-npm install
+cd BE
+.\venv\Scripts\activate
+python app.py --reload  # Auto-reload on file changes (if using Uvicorn directly)
 ```
 
-### Video Processing Issues
+### Frontend Development
 
-**"Video too large/too long"**
-- Max duration: 3 minutes (180 seconds)
-- Max resolution: 1920×1080
-- Pre-process with: `ffmpeg -i input.mp4 -t 180 -s 1280x720 output.mp4`
+```bash
+cd FE
+npm run dev
+npm run lint  # Run ESLint
+npm run build # Build for production
+```
 
-**"Low confidence detections"**
-- Check lighting conditions
-- Try Test Mode first (15 seconds)
-- Adjust thresholds in Advanced Settings
-- Verify video quality is acceptable
+### Testing & Validation
 
-**"Out of memory during processing"**
+**Linting:**
+```bash
+cd FE
+npm run lint
+```
+
+**Building for Production:**
+```bash
+cd FE
+npm run build
+```
+
+## Dataset & Training
+
+The project uses Roboflow for dataset management:
+
+```bash
+cd BE
+.\venv\Scripts\activate
+```
+
+Then configure and run `train_model.py` to train on your basketball dataset.
+
+## CORS Configuration
+
+The FastAPI backend is configured to accept requests from the React frontend:
+
 ```python
-# In BE/app.py, reduce batch processing
-# Or process shorter video segments
+CORSMiddleware(
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 ```
 
----
+Modify `app.py` if running on different ports.
 
-## 📈 Project Statistics
+## Output Files
 
-- **Lines of Code**: ~3000+ (Backend), ~1500+ (Frontend)
-- **Training Data**: ~10,000 annotated images
-- **Detection Classes**: 5
-- **Supported Video Formats**: MP4, MOV, AVI
-- **Processing Speed**: ~5-30 FPS (depends on GPU and resolution)
+### Processed Video
+- Format: MP4 (H.264 codec)
+- Contains: YOLO detections, player tracking IDs, HUD with game statistics
+- Minimap showing court perspective
+- Visual effects highlighting detected objects
 
----
+### Statistics CSV
+- Columns: Frame number, timestamp, player IDs, detected objects, shots, baskets
+- Per-player aggregated statistics
+- Useful for further analysis in Excel or Python
 
-## 🎓 Learning Resources
+## Limitations & Future Enhancements
 
-### YOLO & Computer Vision
-- [Ultralytics YOLOv11 Docs](https://docs.ultralytics.com/)
-- [Object Detection Fundamentals](https://github.com/ultralytics/yolov5/wiki)
+**Current Limitations:**
+- Requires clear basketball court visibility
+- Performance varies with lighting conditions
+- Real-time processing depends on GPU availability
 
-### FastAPI & Web Development
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [React Documentation](https://react.dev/)
+**Planned Features:**
+- Ball possession tracking
+- Shot trajectory analysis
+- Web-based model retraining interface
 
-### Sports Analytics
-- [Basketball Court Dimensions](https://en.wikipedia.org/wiki/Basketball_court)
-- [Video Analysis with OpenCV](https://docs.opencv.org/)
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Areas for improvement:
-
-1. **Model Improvements**
-   - More diverse training data
-   - Fine-tuning for specific courts
-   - Ensemble methods
-
-2. **Features**
-   - Multi-camera support
-   - Advanced player statistics
-   - Live streaming analysis
-   - Mobile app
-
-3. **Performance**
-   - GPU optimization
-   - Model quantization
-   - Distributed processing
-
-4. **Documentation**
-   - Video tutorials
-   - API documentation
-   - Deployment guides
-
----
-
-## 📜 Credits
-
-**Original Repository**: [SwishAI](https://github.com/sPappalard/SwishAI) by sPappalard
-
-**Modified & Enhanced by**: DiegoGMD
-
-**Key Technologies**:
-- [Ultralytics YOLO](https://github.com/ultralytics/ultralytics)
-- [FastAPI](https://github.com/tiangolo/fastapi)
-- [React](https://github.com/facebook/react)
-- [OpenCV](https://github.com/opencv/opencv)
-
-**Dataset**: [Basketball Detection Dataset - Roboflow Universe](https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd)
-- Created by: basketball community
-- License: CC BY 4.0
-- ~10,000 annotated images
-- 5 detection classes
-
-### Citation
-
-If you use SwishAI in your research, please cite:
-
-```bibtex
-@software{swishai2025,
-  author = {sPappalard and DiegoGMD},
-  title = {SwishAI: Basketball Shot Analysis & Tracking},
-  url = {https://github.com/sPappalard/SwishAI},
-  year = {2025}
-}
-
-@misc{basketball_dataset,
-  title = {Basketball Detection Dataset},
-  author = {Roboflow},
-  url = {https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd},
-  year = {2025},
-  license = {CC BY 4.0}
-}
-```
-
----
-
-## 📄 License
+## License
 
 This project is released under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-### Why AGPL-3.0?
+**Why AGPL-3.0?**
+This project integrates **Ultralytics YOLO**, which is licensed under AGPL-3.0. As a derivative work, RotoAI inherits this license to ensure full compliance with the open-source terms of its dependencies.
 
-SwishAI integrates **Ultralytics YOLO**, which is licensed under AGPL-3.0. As a derivative work, this project inherits this license to ensure full compliance.
+**What this means for you:**
+- **Use:** You can use this software for personal, research, or commercial purposes.
+- **Modify:** You can modify the source code.
+- **Share:** If you distribute this software or host it as a network service (SaaS), you **must** disclose the source code of your modified version under the same AGPL-3.0 license.
 
-### What This Means
+## 📜 Credits
 
-- ✅ **Use**: Personal, research, or commercial purposes
-- ✅ **Modify**: Change the source code
-- ✅ **Distribute**: Share with others
-- 🔄 **Condition**: If you distribute or run as a network service (SaaS), you **must** disclose and share your source code modifications under AGPL-3.0
-
-See [LICENSE.txt](LICENSE.txt) for full terms.
-
----
-
-## 📞 Support & Feedback
-
-- **Issues**: Open an issue on GitHub
-- **Discussions**: Check existing discussions or create new ones
-- **Documentation**: See individual module docstrings in source code
+- **Original Work**: sPappalard
+- **Developer**: DiegoGMD
+- **Dataset**: [Roboflow Universe - Basketball Detection](https://universe.roboflow.com/basketball-6vyfz/basketball-detection-srfkd) + Custom Dataset
+- **Frameworks**: Ultralytics YOLO, FastAPI, React
 
 ---
 
-## 🔮 Roadmap
-
-- [ ] Multi-camera support
-- [ ] Player identification (face/jersey recognition)
-- [ ] Advanced stats (shooting range, shot types)
-- [ ] Live streaming analysis
-- [ ] Mobile application
-- [ ] Cloud deployment guide
-- [ ] REST API enhancements
-- [ ] Real-time 3D court visualization
-
----
-
-<div align="center">
-
-**Made with 🏀 and 💙 by basketball enthusiasts**
-
-⭐ If this project helps you, please consider giving it a star!
-
-</div>
+**Last Updated:** 2026-05-19  
+**Version:** 1.0  
+**Status:** Active Development

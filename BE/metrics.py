@@ -442,16 +442,16 @@ class PerformanceInsights:
         s = self.training_summary
         
         summary = f"""
-Training completed in {s['total_time_hours']:.1f} hours ({s['total_epochs']} epochs).
-Best performance achieved at epoch {s['best_epoch']}.
+        Training completed in {s['total_time_hours']:.1f} hours ({s['total_epochs']} epochs).
+        Best performance achieved at epoch {s['best_epoch']}.
 
-Key Metrics:
-- mAP@50: {s['best_map50']:.4f} (mean average precision at 50% IoU)
-- mAP@50-95: {s['best_map5095']:.4f} (mAP across all IoU thresholds)
-- Precision: {s['best_precision']:.4f} (accuracy of positive predictions)
-- Recall: {s['best_recall']:.4f} (completeness of detections)
+        Key Metrics:
+        - mAP@50: {s['best_map50']:.4f} (mean average precision at 50% IoU)
+        - mAP@50-95: {s['best_map5095']:.4f} (mAP across all IoU thresholds)
+        - Precision: {s['best_precision']:.4f} (accuracy of positive predictions)
+        - Recall: {s['best_recall']:.4f} (completeness of detections)
 
-Final Loss: {s['final_val_box_loss']:.4f}
+        Final Loss: {s['final_val_box_loss']:.4f}
         """
         return summary.strip()
     
@@ -782,7 +782,7 @@ def main():
     
     # Step 3: Performance Insights
     print("\n💡 Generating performance insights...")
-    insights = PerformanceInsights(training_summary, val_results)
+    insights = PerformanceInsights(training_summary)
     report = insights.print_full_report()
     
     # Step 4: Save Report as JSON

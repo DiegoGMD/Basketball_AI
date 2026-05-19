@@ -265,7 +265,7 @@ class PlayerStats:
     def __init__(self):
         self.shots_attempted = 0
         self.baskets_made = 0
-        self.shot_positions: list[tuple[float, float]] = [] # (x_cm, y_cm) per shot
+        self.shot_positions: list[list] = []  # [x_cm, y_cm, scored]
 
     @property
     def accuracy(self):
@@ -329,7 +329,7 @@ class GameStats:
                 ps = self._get_player(self._last_shooter_id)
                 ps.shots_attempted += 1
                 if court_pos is not None:
-                    ps.shot_positions.append(court_pos)
+                    ps.shot_positions.append([court_pos[0], court_pos[1], False])
                 print(f"🏀  Shot registered → Player #{self._last_shooter_id}")
             return True
         return False
@@ -372,6 +372,7 @@ class GameStats:
                 # Guard: baskets can't exceed shots for this player either
                 if ps.baskets_made < ps.shots_attempted:
                     ps.baskets_made += 1
+                    if ps.shot_positions: ps.shot_positions[-1][2] = True  # mark last shot as scored
                     print(f"✅  Basket credited → Player #{self._last_shooter_id}")
 
             self.animation_frames.clear()
@@ -919,7 +920,7 @@ class VideoProcessor:
                 cv2.line(final_frame, (w, STATS_H), (FINAL_W, STATS_H), (255,255,255), 2)
 
                 # --- BETA DISCLAIMER (top-left corner) ---
-                disclaimer_text = "TEST VIDEO\nProgram in development"
+                disclaimer_text = "TEST VIDEO - Program in development"
                 disclaimer_font = cv2.FONT_HERSHEY_SIMPLEX
                 disclaimer_scale = 0.55
                 disclaimer_thickness = 1
@@ -946,13 +947,13 @@ class VideoProcessor:
                 self._update_status("stopped", frame_idx, max_frames, stats)
             else:
                 # create final screen and add it to the final video for 5 seconds
-                summary_left = Visualizer.draw_final_screen(w, h, stats, frame_idx, fps)
-                right_panel = np.zeros((FINAL_H, RIGHT_W, 3), dtype=np.uint8)
-                right_panel[:] = (25, 25, 25)
-                final_summary = np.hstack((summary_left, right_panel))
+                # summary_left = Visualizer.draw_final_screen(w, h, stats, frame_idx, fps)
+                # right_panel = np.zeros((FINAL_H, RIGHT_W, 3), dtype=np.uint8)
+                # right_panel[:] = (25, 25, 25)
+                # final_summary = np.hstack((summary_left, right_panel))
 
-                for _ in range(int(fps * 5)):
-                    writer.write(final_summary)
+                # for _ in range(int(fps * 5)):
+                #     writer.write(final_summary)
 
                 self._update_status("completed", frame_idx, max_frames, stats)
                 print(f"✅ Finished. Acc: {stats.accuracy:.1f}%")
@@ -963,7 +964,7 @@ class VideoProcessor:
                     writer_csv = csv.writer(f)
                     writer_csv.writerow(["player_id", "shots", "baskets", "accuracy_pct", "shot_positions"])
                     for pid, ps in sorted(stats.player_stats.items()):
-                        positions_str = "; ".join(f"({x:.1f},{y:.1f})" for x, y in ps.shot_positions)
+                        positions_str = "; ".join(f"({x:.1f},{y:.1f},{int(p)})" for x, y, p in ps.shot_positions)
                         writer_csv.writerow([pid, ps.shots_attempted, ps.baskets_made, f"{ps.accuracy:.1f}", positions_str])
                 print(f"📄 CSV saved → {csv_path}")
 

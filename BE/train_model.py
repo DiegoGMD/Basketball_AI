@@ -58,16 +58,16 @@ class Config:
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
     LR0 = 0.01              # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.05              # Final learning rate (lr0 * lrf)
+    LRF = 0.1              # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.0002
+    WEIGHT_DECAY = 0.0001
     WARMUP_EPOCHS = 3.0
     COS_LR = True           # Use Cosine LR scheduler
     
     # --- Loss Function Weights --- Heavily penalizes bounding box errors to ensure tracking precision on moving targets.
     # Adjusted to prioritize bounding box accuracy over classification
     BOX_GAIN = 7.5          # Box loss gain
-    CLS_GAIN = 1.0          # Class loss gain
+    CLS_GAIN = 1.5          # Class loss gain
     # DFL_GAIN = 1.5        # Distribution Focal Loss gain
     
     # --- Data Augmentation (Optimized for Sports/Motion) ---
@@ -86,11 +86,11 @@ class Config:
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-        'mosaic': 0.2,      # Mosaic (Probability)
+        'mosaic': 0.8,      # Mosaic (Probability)
         'mixup': 0.0,      # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
-        'erasing': 0.0,     # Random erasing (Probability) - Simulates occlusion
-        'auto_augment': 'none', # Use RandAugment policy (previous: 'augmix')
+        'erasing': 0.2,     # Random erasing (Probability) - Simulates occlusion
+        'auto_augment': 'randaugment', # Use RandAugment policy (previous: 'augmix')
     }
 
 # ==============================================================================
@@ -107,9 +107,9 @@ class TrainingLogger:
     def start_session(self):
         """Called when training session begins."""
         self.start_time = time.time()
-        print("\n" + "🚀 " * 20)
+        print("\n" + "=" * 20)
         print(f"STARTING TRAINING SESSION: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("🚀 " * 20 + "\n")
+        print("=" * 20 + "\n")
 
     def start_epoch(self, current, total):
         """Called at the start of each epoch."""
