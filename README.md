@@ -394,17 +394,6 @@ cd FE
 npm run build
 ```
 
-## Dataset & Training
-
-The project uses Roboflow for dataset management:
-
-```bash
-cd BE
-.\venv\Scripts\activate
-```
-
-Then configure and run `train_model.py` to train on your basketball dataset.
-
 ## CORS Configuration
 
 The FastAPI backend is configured to accept requests from the React frontend:

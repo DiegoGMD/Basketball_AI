@@ -363,7 +363,7 @@ Asegurate que el frontend está activo http://localhost:5173
 ```bash
 cd BE
 .\venv\Scripts\activate
-python app.py --reload  # Auto-reload on file changes (if using Uvicorn directly)
+python app.py --reload  # Recarga automaticamente si cambia el archivo (si usa Uvicorn direcamente)
 ```
 
 ### Frontend Development
@@ -371,11 +371,11 @@ python app.py --reload  # Auto-reload on file changes (if using Uvicorn directly
 ```bash
 cd FE
 npm run dev
-npm run lint  # Run ESLint
-npm run build # Build for production
+npm run lint  # Ejecuta ESLint
+npm run build # Versión para producción
 ```
 
-### Testing & Validation
+### Pruebas y Validación
 
 **Linting:**
 ```bash
@@ -383,26 +383,15 @@ cd FE
 npm run lint
 ```
 
-**Building for Production:**
+**Versión para producción:**
 ```bash
 cd FE
 npm run build
 ```
 
-## Dataset & Training
-
-The project uses Roboflow for dataset management:
-
-```bash
-cd BE
-.\venv\Scripts\activate
-```
-
-Then configure and run `train_model.py` to train on your basketball dataset.
-
 ## CORS Configuration
 
-The FastAPI backend is configured to accept requests from the React frontend:
+El backend FastAPI está configurado para aceptar solicitudes del frontend en React:
 
 ```python
 CORSMiddleware(
@@ -413,7 +402,7 @@ CORSMiddleware(
 )
 ```
 
-Modify `app.py` if running on different ports.
+Modifica `app.py` para ejectar en otros puertos. 
 
 ## Output Files
 
