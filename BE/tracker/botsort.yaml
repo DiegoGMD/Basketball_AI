@@ -8,14 +8,14 @@ track_high_thresh: 0.30 # (float) First-stage match threshold; raise for cleaner
 track_low_thresh: 0.10 # (float) Second-stage threshold for low-score matches; balances recovery vs drift            def: 0.1
 new_track_thresh: 0.80 # (float) Start a new track if no match ≥ this; higher reduces false tracks                   def: 0.25
 track_buffer: 120 # (int) Frames to keep lost tracks alive; higher handles occlusion, increases ID switches risk      def: 30
-match_thresh: 0.85 # (float) Association similarity threshold (IoU/cost); tune with detector quality                 def: 0.8
+match_thresh: 0.70 # (float) Association similarity threshold (IoU/cost); tune with detector quality                 def: 0.8
 fuse_score: True # (bool) Fuse detection score with motion/IoU for matching; stabilizes weak detections              def: True
 
 # BoT-SORT specifics
 gmc_method: sparseOptFlow # (str) Global motion compensation: sparseOptFlow|orb|sift|ecc|none; helps moving camera scenes
 
 # ReID model related thresh
-proximity_thresh: 0.5 # (float) Min IoU to consider tracks proximate for ReID; higher is stricter                    def: 0.5
-appearance_thresh: 0.50 # (float) Min appearance similarity for ReID; raise to avoid identity swaps                  def: 0.8
+proximity_thresh: 0.25 # (float) Min IoU to consider tracks proximate for ReID; higher is stricter                   def: 0.5
+appearance_thresh: 0.25 # (float) Min appearance similarity for ReID; raise to avoid identity swaps                  def: 0.8
 with_reid: True # (bool) Enable ReID model use; needs extra model and compute
 model: auto # (str) ReID model name/path; "auto" uses detector features if available

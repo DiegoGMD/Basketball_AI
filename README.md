@@ -5,7 +5,7 @@
 
 > [!NOTE] This is repository a slight modification of sPappalard's one named [SwishAI](https://github.com/sPappalard/SwishAI/tree/master)
 
-A comprehensive computer vision system for real-time basketball training analysis and player tracking. This project combines deep learning object detection with video processing to automatically identify players, basketballs, and court elements, providing detailed training statistics and visual analytics.
+A comprehensive computer vision system for real-time basketball training analysis and player tracking. This project combines deep learning object detection with video processing to automatically identify players, basketballs, and court elements, providing detailed training statistics.
 
 ## Overview
 
@@ -41,39 +41,62 @@ Basketball AI Tracker uses YOLO (You Only Look Once) neural networks to detect a
 
 ```
 Basketball_AI/
-├── BE/                              # Backend (Python)
-│   ├── app.py                       # Main FastAPI application
-│   ├── train_model.py               # YOLO model training script
-│   ├── metrics.py                   # Training metrics and analysis
-│   ├── calibrate.py                 # Camera calibration utilities
-│   ├── basketball_training/         # Trained models directory
-│   │   └── yolo26s_5classes/        # Deployed model (5 detection classes)
-│   ├── tracker/                     # Tracking configs and court images
-│   │   ├── bytetrack.yaml           # ByteTrack configuration
-│   │   ├── botsort.yaml             # BoTSORT configuration (default)
-│   │   ├── minimap.png              # Court reference image
-│   │   └── homography.npy           # Homography transformation matrix
-│   ├── uploads/                     # User-uploaded videos (auto-created)
-│   ├── processed/                   # Processed output videos (auto-created)
-│   ├── requirements.txt             # Python dependencies
-│   └── venv/                        # Python virtual environment (created by setup)
+├── BE/                                 # Backend (Python)
+│   ├── app.py                          # Main FastAPI application
+│   ├── calibrate.py                    # Image calibration utilities
+│   ├── metrics.py                      # Training metrics and analysis
+│   ├── player_report.py                # Player report utilities
+│   ├── requirements.txt                # Python dependencies
+│   ├── train_model.py                  # YOLO model training script
+│   ├── yolo.pt                      # your YOLO base model weights
+│   ├── basketball-detection-srfkd-1/   # Dataset folder
+│   │   ├── test/
+│   │   ├── train/
+│   │   └── valid/
+│   ├── basketball_training/            # Trained models directory
+│   │   ├── yolo26m_5classes/
+│   │   └── yolo26s_5classes/
+│   ├── metrics_reports/                # Performance reports
+│   │   ├── overfitting_analysis.png
+│   │   ├── performance_report.json
+│   │   └── training_curves.png
+│   ├── tracker/                        # Tracking configs and court images
+│   │   ├── botsort.yaml
+│   │   ├── bytetrack.yaml
+│   │   ├── court.excalidraw
+│   │   ├── half_court_y.npy
+│   │   ├── homography.npy
+│   │   ├── homography_scale.npy
+│   │   ├── minimap.png
+│   │   └── reprojection_preview.png
+│   ├── uploads/                        # User-uploaded videos (auto-created)
+│   ├── processed/                      # Processed output videos (auto-created)
+│   ├── runs/                           # Processed output videos (auto-created)
+│   └── venv/                           # Python virtual environment
 │
-├── FE/                              # Frontend (React)
-│   ├── src/
-│   │   ├── App.jsx                  # Main React component
-│   │   ├── App.css                  # Application styles
-│   │   ├── main.jsx                 # React entry point
-│   │   ├── index.css                # Global styles
-│   │   └── assets/                  # Static assets
-│   ├── public/                      # Public static files
-│   ├── package.json                 # Node dependencies
-│   ├── vite.config.js               # Vite configuration
-│   ├── tailwind.config.js           # Tailwind CSS configuration
-│   └── eslint.config.js             # ESLint configuration
+├── FE/                                 # Frontend (React)
+│   ├── package.json                    # Node dependencies
+│   ├── package-lock.json               # npm lockfile
+│   ├── vite.config.js                  # Vite configuration
+│   ├── tailwind.config.js              # Tailwind CSS configuration
+│   ├── postcss.config.js               # PostCSS configuration
+│   ├── eslint.config.js                # ESLint configuration
+│   ├── index.html                      # SPA entry HTML
+│   ├── README.md                       # Frontend README
+│   ├── public/                         # Public static files
+│   └── src/
+│       ├── App.jsx                    # Main React component
+│       ├── App.css                    # Application styles
+│       ├── main.jsx                   # React entry point
+│       ├── index.css                  # Global styles
+│       └── assets/                    # Static assets
 │
-├── install_env.bat                  # Windows environment setup script
-├── LICENSE / LICENSE.txt            # Project licensing
-└── README.md                        # Original documentation
+├── .gitignore                         # Ignored files
+├── install_env.bat                    # Windows environment setup script
+├── LICENSE                            # Project licensing
+├── README.md                          # Original documentation
+├── README_og.md                       # Original README backup
+└── README.es.md                       # Spanish documentation
 ```
 
 ## Getting Started
@@ -168,7 +191,7 @@ The Vite development server will start at `http://localhost:5173`
 
 6. **Download Results**
    - Download the processed video with tracking overlays and HUD
-   - Download the CSV report with per-frame and per-player statistics
+   - Download the statistics CSV report
 
 ### API Endpoints
 
@@ -186,11 +209,11 @@ The Vite development server will start at `http://localhost:5173`
 
 The system uses YOLOv11 trained on basketball-specific datasets with 5 detection classes:
 
-1. **Player** - Basketball player
-2. **Ball** - Basketball
-3. **Hoop** - Basketball hoop/rim
-4. **Court** - Court boundaries/markings
-5. **Backboard** - Backboard structure
+    0 - "Ball" 
+    1 - "Ball in Basket"
+    2 - "Player"
+    3 - "Basket"
+    4 - "Player Shooting"
 
 ### Training a Custom Model
 

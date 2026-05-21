@@ -1,5 +1,5 @@
 """
-🏀 BASKETBALL DETECTION - YOLO11 Training Script
+🏀 BASKETBALL DETECTION - YOLO Training Script
 =============================================================
 This script handles the training process for the basketball detection model.
 It includes:
@@ -57,11 +57,11 @@ class Config:
     OPTIMIZER = 'MuSGD'
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-    LR0 = 0.01              # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.1              # Final learning rate (lr0 * lrf)
+    LR0 = 0.013            # Initial learning rate (SGD=1E-2, Adam=1E-3)
+    LRF = 0.01             # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.0001
-    WARMUP_EPOCHS = 3.0
+    WEIGHT_DECAY = 0.00005
+    WARMUP_EPOCHS = 5.0
     COS_LR = True           # Use Cosine LR scheduler
     
     # --- Loss Function Weights --- Heavily penalizes bounding box errors to ensure tracking precision on moving targets.
@@ -78,19 +78,19 @@ class Config:
         'hsv_s': 0.4,       # HSV-Saturation adjustment
         'hsv_v': 0.2,       # HSV-Value adjustment
         #geometry and position
-        'degrees': 5.0,     # Rotation (+/- deg)
-        'translate': 0.1,   # Translation (+/- fraction)
-        'scale': 0.3,       # Scale gain (+/- gain)
+        'degrees': 3.0,     # Rotation (+/- deg)
+        'translate': 0.08,  # Translation (+/- fraction)
+        'scale': 0.4,       # Scale gain (+/- gain)
         'shear': 0.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-        'mosaic': 0.8,      # Mosaic (Probability)
-        'mixup': 0.0,      # Mixup (Probability) - Helps with player overlap
+        'mosaic': 0.5,      # Mosaic (Probability)
+        'mixup': 0.0,       # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
-        'erasing': 0.2,     # Random erasing (Probability) - Simulates occlusion
-        'auto_augment': 'randaugment', # Use RandAugment policy (previous: 'augmix')
+        'erasing': 0.1,     # Random erasing (Probability) - Simulates occlusion
+        'auto_augment': 'noaug', # Use RandAugment policy (previous: 'augmix')
     }
 
 # ==============================================================================

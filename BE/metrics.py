@@ -50,7 +50,8 @@ class TrainingAnalyzer:
         """Get training summary statistics."""
         if self.df is None:
             return None
-            
+        
+        epoch_times = self.df['time'].diff().fillna(self.df['time'].iloc[0])
         train_loss_final = self.df['train/box_loss'].iloc[-1]
         val_loss_final   = self.df['val/box_loss'].iloc[-1]
         # Ratio > 1 means val loss is higher than train loss (overfitting signal).
@@ -91,8 +92,8 @@ class TrainingAnalyzer:
 
         summary = {
             'total_epochs': len(self.df),
-            'total_time_hours': self.df['time'].sum() / 3600,
-            'avg_epoch_time_min': self.df['time'].mean() / 60,
+            'total_time_hours': self.df['time'].iloc[-1] / 3600,
+            'avg_epoch_time_min': epoch_times.mean() / 60,
             'best_map50': self.df['metrics/mAP50(B)'].max(),
             'best_map5095': self.df['metrics/mAP50-95(B)'].max(),
             'best_precision': self.df['metrics/precision(B)'].max(),
@@ -340,13 +341,13 @@ class TrainingAnalyzer:
         ax.grid(True, alpha=0.3)
 
         plt.tight_layout()
-        save_path = MetricsConfig.OUTPUT_DIR / 'overfitting_analysis.png'
+        save_path = MetricsConfig.OUTPUT_DIR / 'fit_analysis.png'
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"✅ Saved: {save_path}")
         plt.close()
 
 # ==============================================================================
-# 2. MODEL VALIDATION & TEST SET EVALUATION
+# 2. MODEL EVALUATION & CLASS PERFORMANCE ANALYSIS
 # ==============================================================================
 class ModelEvaluator:
     """Evaluates model on test set and generates detailed metrics."""
@@ -412,6 +413,76 @@ class ModelEvaluator:
                 print(f"{cls_name:<20} {map50:<12.4f} {prec:<12.4f} {rec:<12.4f}")
         
         print("="*70 + "\n")
+
+class ClassPerformanceAnalyzer:
+    """Per-class AP50, AP50-95, Precision, Recall breakdown with chart."""
+
+    WEAK_MAP50_THRESHOLD = 0.40  # classes below this are flagged
+
+    def __init__(self, val_results):
+        self.res = val_results
+
+    def _build_class_df(self):
+        box         = self.res.box
+        names       = self.res.names                    # {0: 'basketball', ...}
+        cls_indices = box.ap_class_index                # classes present in val
+        rows = []
+        for i, idx in enumerate(cls_indices):
+            rows.append({
+                'class_name': names.get(int(idx), f'cls_{idx}'),
+                'AP50':       float(box.ap50[i]),
+                'AP50-95':    float(box.maps[i]),
+                'Precision':  float(box.p[i]),
+                'Recall':     float(box.r[i]),
+            })
+        return pd.DataFrame(rows).sort_values('AP50', ascending=False).reset_index(drop=True)
+
+    def print_class_report(self):
+        if self.res is None:
+            print("❌ No validation results."); return
+        df = self._build_class_df()
+
+        print("\n" + "="*70)
+        print("🏷️  CLASS PERFORMANCE REPORT")
+        print("="*70)
+        print(f"\n{'Class':<22} {'AP@50':>7} {'AP@50-95':>9} {'Prec':>7} {'Recall':>7}  Flag")
+        print("-"*65)
+        for _, row in df.iterrows():
+            flag = "⚠️  WEAK" if row['AP50'] < self.WEAK_MAP50_THRESHOLD else "✅"
+            print(f"{row['class_name']:<22} {row['AP50']:>7.4f} {row['AP50-95']:>9.4f} "
+                  f"{row['Precision']:>7.4f} {row['Recall']:>7.4f}  {flag}")
+
+        weak = df[df['AP50'] < self.WEAK_MAP50_THRESHOLD]['class_name'].tolist()
+        if weak:
+            print(f"\n  ⚠️  Weak classes: {', '.join(weak)}")
+            print("     → More annotations, targeted augmentation, or class weighting")
+        else:
+            print(f"\n  ✅ All classes ≥ AP@50 {self.WEAK_MAP50_THRESHOLD}")
+        print("="*70 + "\n")
+        return df
+
+    def plot_class_performance(self):
+        if self.res is None: return
+        df      = self._build_class_df()
+        metrics = ['AP50', 'AP50-95', 'Precision', 'Recall']
+        class_names = ['Ball', 'Ball in Basket', 'Player', 'Basket', 'Player Shooting']
+        x, w    = np.arange(len(df)), 0.20
+
+        fig, ax = plt.subplots(figsize=(max(10, len(df) * 2), 6))
+        for i, m in enumerate(metrics):
+            ax.bar(x + i * w, df[m], w, label=m, alpha=0.85)
+        ax.axhline(y=self.WEAK_MAP50_THRESHOLD, color='red', linestyle='--',
+                   alpha=0.6, label=f'Weak threshold ({self.WEAK_MAP50_THRESHOLD})')
+        ax.set_xticks(x + w * 1.5)
+        ax.set_xticklabels([class_names[int(i)] for i in df['class_name']], ha='center')
+        ax.set_ylabel('Score'); ax.set_ylim([0, 1.05])
+        ax.set_title('Per-Class Detection Performance\n(AP50, AP50-95, Precision, Recall)')
+        ax.legend(fontsize=8); ax.grid(True, axis='y', alpha=0.3)
+        plt.tight_layout()
+        save_path = MetricsConfig.OUTPUT_DIR / 'class_performance.png'
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✅ Saved: {save_path}")
+        plt.close()
 
 # ==============================================================================
 # 3. PERFORMANCE INSIGHTS & EXPLANATIONS
@@ -554,7 +625,7 @@ class PerformanceInsights:
             recommendations.append("🔄 Expand training data or apply stronger augmentation (mosaic, mixup, colour jitter)")
             recommendations.append("⏹️  Enable early stopping (patience=20) to stop at the best validation epoch")
             if overfit_ratio > 1.30 or diverging:
-                recommendations.append("📉 Reduce model capacity — try a smaller YOLO variant (e.g. yolo11n) if dataset is small")
+                recommendations.append("📉 Reduce model capacity — try a smaller YOLO variant (e.g. yolo?n) if dataset is small")
 
         # ── Underfitting recommendations ─────────────────────────────────────
         if s.get('is_underfitting'):
@@ -565,7 +636,7 @@ class PerformanceInsights:
             )
             recommendations.append("🔧 Increase learning rate or use a warm-up + cosine decay schedule")
             recommendations.append("📦 Verify dataset quality — check for mislabelled images or class imbalance")
-            recommendations.append("🏗️  Increase model capacity — try a larger YOLO variant (e.g. yolo11m/l)")
+            recommendations.append("🏗️  Increase model capacity — try a larger YOLO variant (e.g. yolo?m/l)")
 
         # ── Early-stopping suggestion ────────────────────────────────────────
         best_val_ep = s.get('best_val_epoch', s['total_epochs'])
@@ -779,6 +850,12 @@ def main():
     print("\n🔍 Evaluating model on test set...")
     evaluator = ModelEvaluator(MetricsConfig.MODEL_PATH, MetricsConfig.DATA_YAML)
     val_results = evaluator.validate()
+
+    if val_results is not None:
+        print("\n🏷️  Analyzing per-class performance...")
+        class_analyzer = ClassPerformanceAnalyzer(val_results)
+        class_analyzer.print_class_report()
+        class_analyzer.plot_class_performance()
     
     # Step 3: Performance Insights
     print("\n💡 Generating performance insights...")

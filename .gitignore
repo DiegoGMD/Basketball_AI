@@ -56,7 +56,8 @@ BE/basketball-detection-srfkd-1/
 BE/processed/
 BE/runs/
 BE/uploads/
-BE/tracker/session_results.csv
+BE/delete_comparison_reports/
+BE/compare_models.py
 
 # Large model files
 *.pt

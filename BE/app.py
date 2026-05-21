@@ -41,7 +41,7 @@ class Config:
     # Paths
     UPLOAD_DIR = Path(__file__).parent / "uploads"
     PROCESSED_DIR = Path(__file__).parent / "processed"
-    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26s_5classes" / "weights" / "best.pt"
+    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26m_5classes" / "weights" / "best.pt"
 
     # TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml" # Faster but in theory better with objects going in and out camera
     TRACKER_PATH = Path(__file__).parent / "tracker" / "botsort.yaml" # Keeps better the classes if always visible

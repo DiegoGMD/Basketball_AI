@@ -281,6 +281,7 @@ def _img_to_screen(ix: float, iy: float) -> tuple[int, int]:
 
 
 def _clamp_pan(img_h: int, img_w: int, win_h: int, win_w: int):
+    """Clamp _pan_x/_pan_y so the viewport never scrolls past the image edges."""
     global _pan_x, _pan_y
     max_px = max(0.0, img_w - win_w / _zoom)
     max_py = max(0.0, img_h - win_h / _zoom)
@@ -289,6 +290,7 @@ def _clamp_pan(img_h: int, img_w: int, win_h: int, win_w: int):
 
 
 def _apply_zoom(img: np.ndarray) -> np.ndarray:
+    """Crop and resize the image to simulate zoom+pan. Returns a display-sized copy."""
     if _zoom == 1.0 and _pan_x == 0.0 and _pan_y == 0.0:
         return img
     h, w = img.shape[:2]
@@ -303,6 +305,7 @@ def _apply_zoom(img: np.ndarray) -> np.ndarray:
 
 def _zoom_at(screen_x: int, screen_y: int, factor: float, win_w: int, win_h: int,
              img_w: int, img_h: int):
+    """Zoom keeping the point at (screen_x, screen_y) fixed."""
     global _zoom, _pan_x, _pan_y
     ix = screen_x / _zoom + _pan_x
     iy = screen_y / _zoom + _pan_y
@@ -314,20 +317,24 @@ def _zoom_at(screen_x: int, screen_y: int, factor: float, win_w: int, win_h: int
 
 
 def _reset_zoom():
+    """Reset zoom and pan to origin."""
     global _zoom, _pan_x, _pan_y
     _zoom = 1.0;  _pan_x = 0.0;  _pan_y = 0.0
 
 
 def _opt_info(flat_idx: int) -> tuple[str, tuple, np.ndarray | None]:
+    """Return (label, colour, reference_court_pt) for optional point `flat_idx`."""
     return (OPT_HALF_LABELS[flat_idx], C_OPT_HALF,
             REF_OPT_HALF[flat_idx] if REF_OPT_HALF is not None else None)
 
 
 def _hint_color(flat_idx: int) -> tuple:
+    """Return the HUD hint colour for optional group containing `flat_idx`."""
     return C_OPT_HALF
 
 
 def _group_name(flat_idx: int) -> str:
+    """Return a human-readable group label for optional point `flat_idx`."""
     return "12/13/14 (half-court / centre-circle)"
 
 
@@ -348,6 +355,7 @@ _BOX_REQ_IDX = {4, 5, 9, 10}   # far & near sideline corners → square marker
 #   Redraw
 # ---------------------------------------------------------------------------
 def _redraw(img_base: np.ndarray) -> np.ndarray:
+    """Composite all overlays (points, guide lines, HUD) onto a copy of the base image and return it."""
     img = img_base.copy()
     h, w = img.shape[:2]
     n_req = len(required_pts)
@@ -505,6 +513,11 @@ def _redraw(img_base: np.ndarray) -> np.ndarray:
 #   Mouse callback
 # ---------------------------------------------------------------------------
 def _mouse_cb(event, x, y, flags, param):
+    """
+    OpenCV mouse callback: handles left-click (required pts), right-click (optional pts/skip),
+    middle-drag (pan), and scroll-wheel (zoom).
+    """
+
     global display_img, _pending_opt
     global _zoom, _pan_x, _pan_y, _mid_drag, _drag_start, _pan_start
 
@@ -584,6 +597,7 @@ def _mouse_cb(event, x, y, flags, param):
 #   Undo
 # ---------------------------------------------------------------------------
 def _undo():
+    """Remove the most recently placed point."""
     global _pending_opt
     _pending_opt = None
     if optional_pts:
@@ -600,6 +614,7 @@ def _undo():
 #   Homography computation
 # ---------------------------------------------------------------------------
 def _collect_src_dst():
+    """Collect all placed pixel points (src) and their court-space targets (dst) as float32 arrays."""
     src, dst = [], []
     for i, pt in enumerate(required_pts):
         src.append(pt);  dst.append(REF_REQUIRED[i])
@@ -611,6 +626,16 @@ def _collect_src_dst():
 
 
 def _compute_homography():
+    """
+    Compute the pixel to court homography from all placed points.
+
+    Two-pass approach:
+      Pass 1 — FT box only (4 pts, 6× weighted) for a reliable initial scale.
+      Pass 2 — Project sideline clicks through Pass-1 H to derive symmetrised
+               court coordinates; final RANSAC fit over all 11+ points.
+
+    Returns (H, inliers, mean_reproj_error_cm), or (None, 0, inf) on failure.
+    """
     if len(required_pts) < NUM_REQUIRED:
         return None, 0, float('inf')
 
@@ -717,6 +742,8 @@ def _compute_homography():
     return H, inliers, reproj
 
 def _compute_and_save() -> bool:
+    """Compute the homography and save all output files
+    homography.npy, homography_scale.npy, half_court_y.npy). Returns True on success."""
     placed = sum(1 for p in optional_pts if p is not None)
     total  = len(required_pts) + placed
     if total < NUM_REQUIRED:
@@ -793,6 +820,14 @@ def filter_to_active_half(court_points: np.ndarray) -> np.ndarray:
 #   Reprojection preview
 # ---------------------------------------------------------------------------
 def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarray:
+    """Overlay court geometry and reprojection error dots onto `img_base`.
+
+    Green = clicked pixel,
+    Blue = expected (reprojected) pixel,
+    Yellow = error in px.
+
+    Near-sideline pts (10/11) show green only — their y was derived, so no ground-truth exists.
+    """
     preview = img_base.copy()
     h_img, w_img = preview.shape[:2]
     H_inv = np.linalg.inv(H)
@@ -891,20 +926,17 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
         else:
             cv2.circle(preview, (ox,oy),   6, (0,255,0), -1)
             cv2.circle(preview, (px2,py2), 6, (0,0,255), 2)
-        err = math.hypot(ox-px2, oy-py2)
-        cv2.putText(preview, f"{err:.0f}px", (ox+8,oy-5),
+        lbl = str(idx2 + 1) if idx2 < 9 else str(idx2 + 3)   # 1-9, then 12-14
+        cv2.putText(preview, lbl, (ox+8, oy-5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255,255,0), 1)
 
-    # Near sideline pts 10 & 11 — draw only the clicked pixel (green square)
+    # Near sideline pts 10 & 11 — draw only the clicked pixel (green square, no reprojection error)
     for idx2 in range(9, min(11, len(required_pts))):
         ox, oy = int(required_pts[idx2][0]), int(required_pts[idx2][1])
         s = 6
         cv2.rectangle(preview, (ox-s,oy-s), (ox+s,oy+s), (0,255,0), -1)
         lbl = "10" if idx2 == 9 else "11"
-        cv2.putText(preview, f"{lbl}(near)", (ox+8,oy-5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255,255,0), 1)
-        err = math.hypot(ox-px2, oy-py2)
-        cv2.putText(preview, f"{err:.0f}px", (ox+8,oy-5),
+        cv2.putText(preview, lbl, (ox+8, oy-5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255,255,0), 1)
 
     cv2.rectangle(preview, (0,0), (w_img,54), (20,20,20), -1)
@@ -917,6 +949,7 @@ def _draw_reprojection_preview(img_base: np.ndarray, H: np.ndarray) -> np.ndarra
 
 
 def _show_preview(img_base: np.ndarray):
+    """Compute homography, draw the reprojection preview, save it, and show it in a window."""
     H, inliers, reproj = _compute_homography()
     if H is None:
         print(f"[calibrate] Cannot preview — need all {NUM_REQUIRED} required points.")
@@ -941,6 +974,9 @@ def _show_preview(img_base: np.ndarray):
 #   Court setup wizard
 # ---------------------------------------------------------------------------
 def _run_setup_wizard():
+    """Interactive CLI wizard to enter court measurements (any standard or custom court).
+    Returns (court_w, half_h, basket_x, basket_y, r_3pt, paint_l, paint_r, ft_y, circle_r, cam_dist).
+    """
     print()
     print("=" * 70)
     print("  COURT SETUP WIZARD — enter measurements in cm")
@@ -998,6 +1034,7 @@ def _run_setup_wizard():
 #   Video helper
 # ---------------------------------------------------------------------------
 def _get_frame(video_path: str, frame_num=None) -> np.ndarray:
+    """Extract a single frame from `video_path`. Defaults to 10% through the video."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         sys.exit(f"[calibrate] Cannot open: {video_path}")
