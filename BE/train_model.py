@@ -34,7 +34,7 @@ class Config:
     RUN_NAME = "yolo26m_5classes"
     DATASET_DIR = Path("basketball-detection-srfkd-1")
     DATA_YAML = "data.yaml"
-    BASE_MODEL = "yolo26m.pt"  # Starting point (Pre-trained: YOLO SMALL)
+    BASE_MODEL = "yolo_models\yolo26m.pt"  # Starting point (Pre-trained: YOLO SMALL)
     # BASE_MODEL = r"C:\Users\NewUser\Documents\basketball_training\weights\best.pt" # Recicle on a new machine
     
     # --- Checkpoint Handling ---
@@ -57,10 +57,10 @@ class Config:
     OPTIMIZER = 'MuSGD'
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-    LR0 = 0.013            # Initial learning rate (SGD=1E-2, Adam=1E-3)
+    LR0 = 0.018            # Initial learning rate (SGD=1E-2, Adam=1E-3)
     LRF = 0.01             # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.00005
+    WEIGHT_DECAY = 0.00002
     WARMUP_EPOCHS = 5.0
     COS_LR = True           # Use Cosine LR scheduler
     
@@ -75,18 +75,18 @@ class Config:
     AUGMENTATION = {
         #color and light
         'hsv_h': 0.015,     # HSV-Hue adjustment
-        'hsv_s': 0.4,       # HSV-Saturation adjustment
+        'hsv_s': 0.3,       # HSV-Saturation adjustment
         'hsv_v': 0.2,       # HSV-Value adjustment
         #geometry and position
         'degrees': 3.0,     # Rotation (+/- deg)
         'translate': 0.08,  # Translation (+/- fraction)
-        'scale': 0.4,       # Scale gain (+/- gain)
+        'scale': 0.25,      # Scale gain (+/- gain)
         'shear': 0.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-        'mosaic': 0.5,      # Mosaic (Probability)
+        'mosaic': 0.25,     # Mosaic (Probability)
         'mixup': 0.0,       # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
         'erasing': 0.1,     # Random erasing (Probability) - Simulates occlusion
