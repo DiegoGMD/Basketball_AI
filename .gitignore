@@ -52,13 +52,17 @@ npm-debug.log*
 
 # ML/Training Data - IMPORTANT: Do not upload training/test/validation datasets
 BE/basketball-detection-srfkd-1/
-
 BE/processed/
 BE/runs/
 BE/uploads/
-BE/delete_comparison_reports/
-BE/compare_models.py
 
 # Large model files
 *.pt
 *.weights
+
+# Expermiments and errors
+BE/delete_comparison_reports/
+BE/compare_models.py
+FE/public/testing_video_real_1player.mp4
+FE/public/testing_video_real_2players.mp4
+FE/public/testing_video_real_6players.mp4

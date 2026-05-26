@@ -30,18 +30,15 @@ class Config:
     Modify this section to tune the training process.
     """
     # --- Paths ---
-    PROJECT_NAME = r"C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training"
+    PROJECT_NAME = Path(__file__).parent / "basketball_training"
     RUN_NAME = "yolo26m_5classes"
-    DATASET_DIR = Path("basketball-detection-srfkd-1")
+    DATASET_DIR = Path(__file__).parent / "basketball-detection-srfkd-1"
     DATA_YAML = "data.yaml"
     BASE_MODEL = "yolo26m.pt"  # Starting point (Pre-trained: YOLO SMALL)
-    # BASE_MODEL = r"C:\Users\NewUser\Documents\basketball_training\weights\best.pt" # Recicle on a new machine
     
     # --- Checkpoint Handling ---
-    RESUME_PATH = Path(f"{PROJECT_NAME}/{RUN_NAME}/weights/last.pt")
-    # RESUME_PATH = Path(r"C:\Users\NewUser\Documents\basketball_training\weights\last.pt") # Recicle on a new machine
-    RESULTS_CSV = Path(f"{PROJECT_NAME}/{RUN_NAME}/results.csv")
-    # RESUME_PATH = Path(r"C:\Users\NewUser\Documents\basketball_training\results.csv") # Recicle on a new machine
+    RESUME_PATH = PROJECT_NAME / RUN_NAME / "weights" / "last.pt"
+    RESULTS_CSV = PROJECT_NAME / RUN_NAME / "results.csv"
     
     # --- Hardware & System ---
     WORKERS = 0             # How many processors load the images (Set to 0 for Windows compatibility to avoid multiprocessing errors)
@@ -52,22 +49,22 @@ class Config:
     EPOCHS = 200            # Total number of training epochs
     BATCH_SIZE = 8          # Batch size: the model studies 8 images at a time before updating the "brain" (Adjust based on my VRAM, 8 is good for 6GB VRAM)
     IMG_SIZE = 640          # Input image resolution
-    PATIENCE = 40           # Early stopping patience (epochs without improvement)
+    PATIENCE = 20           # Early stopping patience (epochs without improvement)
     SAVE_PERIOD = 5         # Save heavy checkpoints every 5 epochs
     OPTIMIZER = 'MuSGD'
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-    LR0 = 0.013            # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.01             # Final learning rate (lr0 * lrf)
+    LR0 = 0.002            # Initial learning rate (SGD=1E-2, Adam=1E-3)
+    LRF = 0.005            # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.00005
-    WARMUP_EPOCHS = 5.0
+    WEIGHT_DECAY = 0.00001
+    WARMUP_EPOCHS = 3.0
     COS_LR = True           # Use Cosine LR scheduler
     
     # --- Loss Function Weights --- Heavily penalizes bounding box errors to ensure tracking precision on moving targets.
     # Adjusted to prioritize bounding box accuracy over classification
-    BOX_GAIN = 7.5          # Box loss gain
-    CLS_GAIN = 1.5          # Class loss gain
+    BOX_GAIN = 5.0          # Box loss gain
+    CLS_GAIN = 0.5          # Class loss gain
     # DFL_GAIN = 1.5        # Distribution Focal Loss gain
     
     # --- Data Augmentation (Optimized for Sports/Motion) ---
@@ -80,16 +77,16 @@ class Config:
         #geometry and position
         'degrees': 3.0,     # Rotation (+/- deg)
         'translate': 0.08,  # Translation (+/- fraction)
-        'scale': 0.4,       # Scale gain (+/- gain)
+        'scale': 0.2,       # Scale gain (+/- gain)
         'shear': 0.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-        'mosaic': 0.5,      # Mosaic (Probability)
-        'mixup': 0.0,       # Mixup (Probability) - Helps with player overlap
+        'mosaic': 0.2,      # Mosaic (Probability)
+        'mixup': 0.20,      # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
-        'erasing': 0.1,     # Random erasing (Probability) - Simulates occlusion
+        'erasing': 0.0,     # Random erasing (Probability) - Simulates occlusion
         'auto_augment': 'noaug', # Use RandAugment policy (previous: 'augmix')
     }
 
@@ -271,6 +268,14 @@ class TrainingSession:
         # 3. Load Model
         print("📦 Loading YOLO Model...")
         if self.resume_training:
+            checkpoint = torch.load(str(Config.RESUME_PATH), map_location='cpu', weights_only=False)
+            if 'train_args' in checkpoint:
+                checkpoint['train_args']['project'] = str(Config.PROJECT_NAME)
+                checkpoint['train_args']['name'] = Config.RUN_NAME
+                checkpoint['train_args']['save_dir'] = str(Config.PROJECT_NAME / Config.RUN_NAME)
+                torch.save(checkpoint, str(Config.RESUME_PATH))
+
+            model = YOLO(str(Config.RESUME_PATH))
             print(f"🔄 Resuming from checkpoint: {Config.RESUME_PATH}")
             model = YOLO(str(Config.RESUME_PATH))
         else:
@@ -284,7 +289,7 @@ class TrainingSession:
         # Merging core config (what YOLO expects) with augmentation settings
         train_args = {
             'data': yaml_path,
-            'project': Config.PROJECT_NAME,
+            'project': str(Config.PROJECT_NAME),
             'name': Config.RUN_NAME,
             'epochs': Config.EPOCHS,
             'batch': Config.BATCH_SIZE,
@@ -323,6 +328,9 @@ class TrainingSession:
             'multi_scale': False # Helps detection at different distances
         }
         
+        print(f"Project Folder: {str(Config.PROJECT_NAME)}")
+        print(f"Project Folder: {train_args["project"]}")
+
         # 6. Start Training
         print(f"\n🎯 Target: {Config.EPOCHS} Epochs | Batch Size: {Config.BATCH_SIZE}")
         print("⏳ Initializing training pipeline (this might take a minute)...")

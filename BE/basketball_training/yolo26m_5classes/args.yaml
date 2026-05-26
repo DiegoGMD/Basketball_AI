@@ -1,10 +1,10 @@
 task: detect
 mode: train
-model: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training\yolo26m_5classes\weights\last.pt
-data: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball-detection-srfkd-1\data.yaml
+model: /home/diego/Basketball_AI/BE/basketball_training/yolo26m_5classes/weights/last.pt
+data: /home/diego/Basketball_AI/BE/basketball-detection-srfkd-1/data.yaml
 epochs: 200
 time: null
-patience: 40
+patience: 20
 batch: 8
 imgsz: 640
 save: true
@@ -12,7 +12,7 @@ save_period: 5
 cache: disk
 device: '0'
 workers: 0
-project: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training
+project: /home/diego/Basketball_AI/BE/basketball_training
 name: yolo26m_5classes
 exist_ok: true
 pretrained: true
@@ -24,7 +24,7 @@ single_cls: false
 rect: false
 cos_lr: true
 close_mosaic: 15
-resume: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training\yolo26m_5classes\weights\last.pt
+resume: /home/diego/Basketball_AI/BE/basketball_training/yolo26m_5classes/weights/last.pt
 amp: true
 fraction: 1.0
 profile: false
@@ -107,4 +107,4 @@ auto_augment: none
 erasing: 0.0
 cfg: null
 tracker: botsort.yaml
-save_dir: C:\Users\Usuario\Documents\Visual Studio Code\Basketball_AI\BE\basketball_training\yolo26m_5classes
+save_dir: /home/diego/Basketball_AI/BE/basketball_training/yolo26m_5classes

@@ -36,7 +36,6 @@ import zipfile  # Added to give the video and the report csv in one file
 import io
 from ultralytics.models.sam import SAM3SemanticPredictor
 
-
 # ==================== CONFIGURATION ====================
 class Config:
     """Centralized configuration for the application."""
@@ -47,9 +46,7 @@ class Config:
 
     # TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml" # Faster but in theory better with objects going in and out camera
     TRACKER_PATH = Path(__file__).parent / "tracker" / "botsort.yaml" # Keeps better the classes if always visible
-
-    SAM_CHECKPOINT = Path(__file__).parent / "sam3" / "sam3.1_multiplex.pt"
-    SAM_CONFIG     = "configs/sam3.1/sam3.1_multiplex.yaml"
+    SAM_PATH = Path(__file__).parent / "sam_models" / "sam3_1.pt"
 
     MINIMAP_PATH = Path(__file__).parent / "tracker" / "minimap.png"
     HOMOGRAPHY_PATH = Path(__file__).parent / "tracker" / "homography.npy"
@@ -205,21 +202,12 @@ def load_model():
 
 yolo_model = load_model()
 
-# ==================== SAM MODEL ===================
 def load_sam():
-    """Loads the SAM model with error handling."""
-    overrides = dict(
-        conf=0.25,
-        task="segment",
-        mode="predict",
-        model="sam3.1_multiplex.pt",
-        half=True,  # Use FP16 for faster inference
-        save=True,
-    )
-
     print("🔄 Loading SAM Model...")
-    if not Config.SAM_CONFIG.exists():
-        raise FileNotFoundError(f"❌ SAM not found at {Config.SAM_CONFIG}")
+    if not Config.SAM_PATH.exists():
+        raise FileNotFoundError(f"❌ SAM not found at {Config.SAM_PATH}")
+    overrides = dict(conf=0.25, task="segment", mode="predict",
+                     model=str(Config.SAM_PATH), half=True, save=False)
     predictor = SAM3SemanticPredictor(overrides=overrides)
     print("✅ SAM loaded successfully!")
     return predictor
@@ -739,120 +727,145 @@ class MinimapRenderer:
 
         return mm
 
-class SamTracker:
-    """Wraps SAMVideoPredictor for online frame-by-frame tracking."""
+class SamIDCorrector:
+    """
+    Corrects BotSORT ID swaps using SAM3 mask-to-mask IoU matching.
+
+    Only activates on frames where BotSORT is likely to fail:
+      - Two player boxes overlap heavily  → crossing
+      - A player is detected as shooting  → mid-jump shape change
+
+    On clean frames it just updates the stored reference masks so the
+    next correction frame has a fresh, reliable template to match against.
+    """
+
+    CROSSING_BOX_IOU  = 0.25   # box IoU above this → treat as crossing frame
+    MASK_MATCH_THRESH = 0.40   # mask IoU above this → same player, correct the ID
 
     def __init__(self, predictor):
         self.predictor = predictor
-        self.state = None
-        self.next_obj_id = 1
-        self.active_ids: dict[int, int] = {}   # sam2_obj_id → track_id
-        self._track_id_counter = 0
+        self._stored_masks: dict[int, np.ndarray] = {}   # track_id → binary mask
 
-    def reset(self, video_path: str):
-        self.state = self.predictor.init_state(video_path=str(video_path))
-        self.next_obj_id = 1
-        self.active_ids = {}
-        self._track_id_counter = 0
+    # ── helpers ────────────────────────────────────────────────────────────────
 
-    def add_boxes(self, frame_idx: int, boxes_xyxy: np.ndarray) -> dict[int, int]:
-        """Register new detections as SAM objects; returns obj_id→track_id map."""
+    def _crossing_detected(self, boxes_xyxy, classes) -> bool:
+        player_boxes = [b for b, c in zip(boxes_xyxy, classes) if c in (2, 4)]
+        for i in range(len(player_boxes)):
+            for j in range(i + 1, len(player_boxes)):
+                x1,y1,x2,y2 = player_boxes[i]
+                px1,py1,px2,py2 = player_boxes[j]
+                ix1,iy1 = max(x1,px1), max(y1,py1)
+                ix2,iy2 = min(x2,px2), min(y2,py2)
+                inter = max(0,ix2-ix1) * max(0,iy2-iy1)
+                if inter == 0: continue
+                union = (x2-x1)*(y2-y1) + (px2-px1)*(py2-py1) - inter
+                if union > 0 and inter/union > self.CROSSING_BOX_IOU:
+                    return True
+        return False
+
+    @staticmethod
+    def _mask_iou(m1: np.ndarray, m2: np.ndarray) -> float:
+        if m1.shape != m2.shape:
+            m2 = cv2.resize(m2.astype(np.uint8),
+                            (m1.shape[1], m1.shape[0])).astype(bool)
+        inter = np.logical_and(m1, m2).sum()
+        union = np.logical_or(m1, m2).sum()
+        return float(inter / union) if union > 0 else 0.0
+
+    # ── main entry point ───────────────────────────────────────────────────────
+
+    def correct(self, frame: np.ndarray, results) -> dict[int, np.ndarray]:
+        """
+        Run SAM3 on the current frame and optionally correct BotSORT IDs.
+        Returns {track_id: mask} for the current frame (used for visualisation).
+        Modifies results[0].boxes.id in-place when a correction is made.
+        """
         import torch
-        new_map = {}
-        for box in boxes_xyxy:
-            obj_id = self.next_obj_id
-            self.next_obj_id += 1
-            self._track_id_counter += 1
-            tid = self._track_id_counter
-            self.predictor.add_new_points_or_box(
-                self.state, frame_idx=frame_idx,
-                obj_id=obj_id,
-                box=torch.tensor(box, dtype=torch.float32)
+
+        if not results or results[0] is None:
+            return {}
+        boxes_data = results[0].boxes
+        if boxes_data is None or boxes_data.id is None or len(boxes_data) == 0:
+            return {}
+
+        boxes_xyxy = boxes_data.xyxy.cpu().numpy()
+        classes    = boxes_data.cls.int().cpu().tolist()
+        track_ids  = boxes_data.id.int().cpu().tolist()
+
+        needs_correction = (
+            4 in classes or                                    # shooting detected
+            self._crossing_detected(boxes_xyxy, classes)      # players crossing
+        )
+
+        # Collect player + ball boxes as SAM prompts
+        prompt_boxes, prompt_ids = [], []
+        for box, cls, tid in zip(boxes_xyxy, classes, track_ids):
+            if cls in (0, 2, 4):
+                prompt_boxes.append(box)
+                prompt_ids.append(tid)
+
+        if not prompt_boxes:
+            return {}
+
+        # Run SAM3
+        try:
+            sam_res = self.predictor(
+                source=frame,
+                bboxes=np.array(prompt_boxes).tolist(),
+                verbose=False
             )
-            self.active_ids[obj_id] = tid
-            new_map[obj_id] = tid
-        return new_map
+        except Exception as e:
+            print(f"⚠️ SAM3 error: {e}")
+            return {}
 
-    def propagate(self, frame_idx: int):
-        """Run SAM for this frame; returns {track_id: (x1,y1,x2,y2)} from masks."""
-        results = {}
-        for fid, obj_ids, masks in self.predictor.propagate_in_video(
-            self.state, start_frame_idx=frame_idx, max_frame_num_to_track=1
-        ):
-            for oid, mask in zip(obj_ids, masks):
-                m = mask[0].cpu().numpy() > 0.0
-                if not m.any():
+        if not sam_res or sam_res[0].masks is None:
+            return {}
+
+        # Build current mask dict
+        current_masks: dict[int, np.ndarray] = {}
+        for tid, mask_t in zip(prompt_ids, sam_res[0].masks.data):
+            current_masks[tid] = mask_t.cpu().numpy() > 0.0
+
+        # Clean frame → just refresh stored masks, no correction needed
+        if not needs_correction:
+            self._stored_masks.update(current_masks)
+            return current_masks
+
+        swap_map: dict[int, int] = {}
+        used_stored:  set[int] = set()
+        used_current: set[int] = set()
+
+        for tid, cls in zip(track_ids, classes):
+            if cls not in (2, 4) or tid not in current_masks or tid in used_current:
+                continue
+            curr_mask = current_masks[tid]
+            best_tid, best_iou = None, 0.0
+            for stored_tid, stored_mask in self._stored_masks.items():
+                if stored_tid in used_stored:
                     continue
-                ys, xs = np.where(m)
-                box = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
-                tid = self.active_ids.get(int(oid))
-                if tid is not None:
-                    results[tid] = box
-        return results
+                iou = self._mask_iou(curr_mask, stored_mask)
+                if iou > best_iou:
+                    best_iou, best_tid = iou, stored_tid
+            if best_tid is not None and best_iou >= self.MASK_MATCH_THRESH and best_tid != tid:
+                print(f"🔧 SAM corrected #{tid} → #{best_tid}  (mask IoU {best_iou:.2f})")
+                swap_map[tid] = best_tid
+                used_stored.add(best_tid)
+                used_current.add(tid)
 
-class _FakeBoxes:
-    """Mimics ultralytics Results[0].boxes so downstream code needs no changes."""
-    def __init__(self, xyxy, cls, conf, ids):
-        import torch
-        self.xyxy  = torch.tensor(xyxy,  dtype=torch.float32) if len(xyxy)  else torch.zeros((0,4))
-        self.cls   = torch.tensor(cls,   dtype=torch.float32) if len(cls)   else torch.zeros((0,))
-        self.conf  = torch.tensor(conf,  dtype=torch.float32) if len(conf)  else torch.zeros((0,))
-        self.id    = torch.tensor(ids,   dtype=torch.float32) if len(ids)   else None
-        self.xywh  = self._to_xywh()
-        self.is_track = self.id is not None and len(self.id) > 0
+        if swap_map:
+            corrected_ids = [swap_map.get(tid, tid) for tid in track_ids]
+            new_data = results[0].boxes.data.clone()
+            new_data[:, -1] = torch.tensor(
+                corrected_ids, dtype=torch.float32, device=new_data.device
+            )
+            results[0].boxes.data = new_data
+            current_masks = {
+                swap_map.get(tid, tid): mask
+                for tid, mask in current_masks.items()
+            }
 
-    def _to_xywh(self):
-        import torch
-        if len(self.xyxy) == 0: return torch.zeros((0,4))
-        x1,y1,x2,y2 = self.xyxy[:,0],self.xyxy[:,1],self.xyxy[:,2],self.xyxy[:,3]
-        return torch.stack([(x1+x2)/2,(y1+y2)/2,x2-x1,y2-y1],dim=1)
-
-    def __len__(self): return len(self.xyxy)
-
-class _FakeResult:
-    def __init__(self, boxes): self.boxes = boxes
-
-def _build_fake_results(yolo_results, sam_boxes: dict):
-    """
-    Merges YOLO class detections with SAM track IDs.
-    Strategy: for each YOLO box, find the SAM track whose box has highest IoU.
-    Event classes (1=ball-in-basket, 3=basket) keep YOLO IDs; 
-    players/ball get SAM IDs.
-    """
-    if not yolo_results or yolo_results[0].boxes is None:
-        return [_FakeResult(_FakeBoxes([],[],[],[]))]
-
-    yboxes = yolo_results[0].boxes.xyxy.cpu().numpy()
-    yclses = yolo_results[0].boxes.cls.int().cpu().tolist()
-    yconfs = yolo_results[0].boxes.conf.cpu().tolist()
-
-    out_boxes, out_cls, out_conf, out_ids = [], [], [], []
-    sam_items = list(sam_boxes.items())  # [(tid, (x1,y1,x2,y2))]
-
-    for box, cls, conf in zip(yboxes, yclses, yconfs):
-        out_boxes.append(box)
-        out_cls.append(cls)
-        out_conf.append(conf)
-
-        if cls in (1, 3):   # event-only classes, no SAM ID needed
-            out_ids.append(-1)
-            continue
-
-        # Match to best SAM track by IoU
-        best_tid, best_iou = -1, 0.0
-        x1,y1,x2,y2 = box
-        for tid, (sx1,sy1,sx2,sy2) in sam_items:
-            ix1,iy1 = max(x1,sx1), max(y1,sy1)
-            ix2,iy2 = min(x2,sx2), min(y2,sy2)
-            inter = max(0,ix2-ix1)*max(0,iy2-iy1)
-            if inter == 0: continue
-            union = (x2-x1)*(y2-y1)+(sx2-sx1)*(sy2-sy1)-inter
-            iou = inter/union
-            if iou > best_iou:
-                best_iou, best_tid = iou, tid
-        out_ids.append(best_tid if best_iou > 0.2 else -1)
-
-    return [_FakeResult(_FakeBoxes(out_boxes, out_cls, out_conf, out_ids))]
+        self._stored_masks.update(current_masks)
+        return current_masks
 
 class VideoProcessor:
     """Manages the video processing loop."""
@@ -866,7 +879,7 @@ class VideoProcessor:
         self.thresholds = thresholds if thresholds else Config.THRESHOLDS
         self.track_history = defaultdict(lambda: [])
         self.last_player_ids: dict = {}  # bbox_region -> stable_id
-        self.sam_tracker = SamTracker(sam_predictor)
+        self.sam_corrector = SamIDCorrector(sam_predictor)
         
     def run(self):
         try:
@@ -943,36 +956,12 @@ class VideoProcessor:
                 # --- TRACKING --- (the model analyzes the original frame, but modifies the copy )
                 # detection using the model
 
-                # --- Frame 0: init SAM ---
-                if frame_idx == 0:
-                    init_results = yolo_model.predict(frame, conf=0.25, imgsz=640, verbose=False)
-                    if init_results and init_results[0].boxes is not None:
-                        player_boxes = []
-                        for box, cls in zip(init_results[0].boxes.xyxy.cpu().numpy(),
-                                            init_results[0].boxes.cls.int().cpu().tolist()):
-                            if cls in (0, 2, 4):   # Ball, Player, Shooting
-                                player_boxes.append(box)
-                        if player_boxes:
-                            self.sam_tracker.reset(self.input_path)
-                            self.sam_tracker.add_boxes(0, np.array(player_boxes))
+                results = yolo_model.track(
+                    frame, persist=True, verbose=False, 
+                    conf=0.25, tracker=Config.TRACKER_PATH, imgsz=640, iou=0.4
+                )
 
-                # --- Every frame: YOLO detect (events) + SAM track (IDs) ---
-                yolo_results = yolo_model.predict(frame, conf=0.25, imgsz=640, verbose=False)
-
-                # Every 30 frames: add newly detected objects to SAM
-                if frame_idx % 30 == 0 and yolo_results and yolo_results[0].boxes is not None:
-                    new_boxes = []
-                    for box, cls in zip(yolo_results[0].boxes.xyxy.cpu().numpy(),
-                                        yolo_results[0].boxes.cls.int().cpu().tolist()):
-                        if cls in (0, 2, 4):
-                            new_boxes.append(box)
-                    if new_boxes:
-                        self.sam_tracker.add_boxes(frame_idx, np.array(new_boxes))
-
-                sam_boxes = self.sam_tracker.propagate(frame_idx)  # {track_id: (x1,y1,x2,y2)}
-
-                # Build a merged result object the rest of the code can consume
-                results = _build_fake_results(yolo_results, sam_boxes)
+                sam_masks = self.sam_corrector.correct(frame, results)
 
                 # Guard: tracker can return [None] on the first frame
                 if not results or results[0] is None:
@@ -988,7 +977,7 @@ class VideoProcessor:
                 
                 # 1. Boxes (Only in FULL_TRACKING)
                 if self.mode == ProcessingMode.FULL_TRACKING:
-                    self._draw_yolo_boxes(annotated, results)
+                    self._draw_yolo_boxes(annotated, results, sam_masks)
                     self._draw_tracking_trails(annotated, results)  # Motion trails
                 
                 # 2. Effects (In FULL_TRACKING or STATS_EFFECTS)
@@ -1246,7 +1235,7 @@ class VideoProcessor:
                 target_pos = stats.last_known_basket_pos or center
                 stats.register_basket(frame_idx, target_pos)
 
-    def _draw_yolo_boxes(self, frame, results):
+    def _draw_yolo_boxes(self, frame, results, sam_masks: dict = {}):
         """
         Draw coloured bounding boxes and labels on *frame* for all detections
         that exceed their class confidence threshold.
@@ -1319,6 +1308,12 @@ class VideoProcessor:
             else:
                 label = f"{class_name} {conf:.2f}"
 
+            # Draw SAM mask overlay if available for this track ID
+            if track_ids[i] in sam_masks:
+                color_overlay = np.zeros_like(frame)
+                color_overlay[sam_masks[track_ids[i]]] = Config.COLORS.get(cls, (255,255,255))
+                cv2.addWeighted(color_overlay, 0.35, frame, 1.0, 0, frame)
+                
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
             # Draw a filled background behind the label so it is readable on any background

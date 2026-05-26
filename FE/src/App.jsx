@@ -88,38 +88,41 @@ export default function App() {
   // step 1: UPLOAD --> Sends the raw file to the server. The server responds with an ID (e.g., "video-123")
   // step 2: START PROCESS --> Uses that ID to tell the server, "Okay, now parse video 'video-123' with these settings." As soon as the server responds "Okay, I've started," the Frontend sets the status to processing. Note: This state change automatically triggers the timer (seen above)
   const uploadAndStart = async () => {
-    if (!file) return;
+  try {
+    setStatus('uploading');
+    setErrorMsg('');
 
-    try {
-      setStatus('uploading');
-      setErrorMsg(''); // Clear previous errors
-      const formData = new FormData();
-      formData.append('file', file);
+    // SSH TRICK - DELETE FOR FINAL VERSION (start)
+    const name = "/testing_video_real_1player.mp4";
+    const response = await fetch(name);
+    if (!response.ok) throw new Error("Could not read video file from server.");
+    const videoBlob = await response.blob();
+    const videoFile = new File([videoBlob], name.split('/').pop(), { type: videoBlob.type });
+    // SSH TRICK - DELETE FOR FINAL VERSION (end)
 
-      const uploadRes = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
-      if (!uploadRes.ok) throw new Error("Upload failed. Check connection or file size.");
-      const uploadData = await uploadRes.json();
-      const fid = uploadData.file_id;
-      setFileId(fid);
+    const formData = new FormData();
+    formData.append('file', videoFile); // ← restore to: file  (the state variable)
 
-      // Pass thresholds as JSON string query param
-      const thresholdParam = encodeURIComponent(JSON.stringify(thresholds));
+    const uploadRes = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
+    if (!uploadRes.ok) throw new Error("Upload failed. Check connection or file size.");
+    const uploadData = await uploadRes.json();
+    const fid = uploadData.file_id;
+    setFileId(fid);
 
-      // Include processing_mode in query
-      const processRes = await fetch(
-        `${API_URL}/process/${fid}?test_mode=${testMode}&mode=${processingMode}&thresholds=${thresholdParam}`, 
-        { method: 'POST' }
-      );
-      
-      if (!processRes.ok) throw new Error("Processing start failed");
-      setStatus('processing');
+    const thresholdParam = encodeURIComponent(JSON.stringify(thresholds));
+    const processRes = await fetch(
+      `${API_URL}/process/${fid}?test_mode=${testMode}&mode=${processingMode}&thresholds=${thresholdParam}`,
+      { method: 'POST' }
+    );
+    if (!processRes.ok) throw new Error("Processing start failed");
+    setStatus('processing');
 
-    } catch (err) {
-      console.error(err);
-      setStatus('error');
-      setErrorMsg(err.message);
-    }
-  };
+  } catch (err) {
+    console.error(err);
+    setStatus('error');
+    setErrorMsg(err.message);
+  }
+};
 
 
   // Call the Python server's /status endpoint.
