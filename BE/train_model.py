@@ -31,15 +31,11 @@ class Config:
     """
     # --- Paths ---
     PROJECT_NAME = Path(__file__).parent / "basketball_training"
-    RUN_NAME = "yolo26m_5classes"
+    RUN_NAME = "yolo26m_5classes_2"
     DATASET_DIR = Path(__file__).parent / "basketball-detection-srfkd-1"
     DATA_YAML = "data.yaml"
-<<<<<<< HEAD
-    BASE_MODEL = "yolo26m.pt"  # Starting point (Pre-trained: YOLO SMALL)
-=======
-    BASE_MODEL = "yolo_models\yolo26m.pt"  # Starting point (Pre-trained: YOLO SMALL)
+    BASE_MODEL = "yolo_models/b_ai_model.pt"  # Starting point (Pre-trained: YOLO SMALL)
     # BASE_MODEL = r"C:\Users\NewUser\Documents\basketball_training\weights\best.pt" # Recicle on a new machine
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72
     
     # --- Checkpoint Handling ---
     RESUME_PATH = PROJECT_NAME / RUN_NAME / "weights" / "last.pt"
@@ -59,19 +55,11 @@ class Config:
     OPTIMIZER = 'MuSGD'
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-<<<<<<< HEAD
-    LR0 = 0.002            # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.005            # Final learning rate (lr0 * lrf)
-    MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.00001
-    WARMUP_EPOCHS = 3.0
-=======
     LR0 = 0.018            # Initial learning rate (SGD=1E-2, Adam=1E-3)
     LRF = 0.01             # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
     WEIGHT_DECAY = 0.00002
     WARMUP_EPOCHS = 5.0
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72
     COS_LR = True           # Use Cosine LR scheduler
     
     # --- Loss Function Weights --- Heavily penalizes bounding box errors to ensure tracking precision on moving targets.
@@ -90,23 +78,14 @@ class Config:
         #geometry and position
         'degrees': 3.0,     # Rotation (+/- deg)
         'translate': 0.08,  # Translation (+/- fraction)
-<<<<<<< HEAD
-        'scale': 0.2,       # Scale gain (+/- gain)
-=======
         'scale': 0.25,      # Scale gain (+/- gain)
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72
         'shear': 0.0,       # Shear angle (+/- deg) - Important for basket perspective
         'perspective': 0.0005, # Perspective warp
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-<<<<<<< HEAD
-        'mosaic': 0.2,      # Mosaic (Probability)
-        'mixup': 0.20,      # Mixup (Probability) - Helps with player overlap
-=======
         'mosaic': 0.25,     # Mosaic (Probability)
         'mixup': 0.0,       # Mixup (Probability) - Helps with player overlap
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
         'erasing': 0.0,     # Random erasing (Probability) - Simulates occlusion
         'auto_augment': 'noaug', # Use RandAugment policy (previous: 'augmix')
