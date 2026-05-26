@@ -21,85 +21,38 @@ Basketball AI Tracker uses YOLO (You Only Look Once) neural networks to detect a
 - Batch processing with progress tracking
 - Automatic cleanup of processed files
 
-## Technology Stack
+## Table of Contents
 
-### Backend
-- **Framework:** FastAPI 0.115.0 with Uvicorn
-- **Computer Vision:** YOLOv26 (via Ultralytics), OpenCV
-- **Deep Learning:** PyTorch 2.5.1 with CUDA support
-- **Data Processing:** NumPy, Pandas, scikit-learn
-- **Visualization:** Matplotlib, Seaborn
-- **Utilities:** Roboflow (dataset management), python-dotenv, PyYAML
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Running the Application](#running-the-application)
+- [Usage](#usage)
+  - [Processing a Basketball Video](#processing-a-basketball-video)
+  - [API Endpoints](#api-endpoints)
+- [Project Structure](#project-structure)
+- [Technology Stack](#technology-stack)
+- [Architecture](#architecture)
+  - [Model Architecture](#model-architecture)
+  - [Pipeline Architecture](#pipeline-architecture)
+  - [Technical Details](#technical-details)
+- [Training & Performance](#training--performance)
+  - [Training a Custom Model](#training-a-custom-model)
+  - [Model Performance](#model-performance)
+  - [Improving Model Performance](#improving-model-performance)
+- [Configuration](#configuration)
+- [Performance Optimization](#performance-optimization)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Output Files](#output-files)
+- [Limitations & Future Enhancements](#limitations--future-enhancements)
+- [CORS Configuration](#cors-configuration)
+- [License](#license)
+- [Credits](#credits)
 
-### Frontend
-- **Framework:** React 19.1.1 with Vite
-- **Styling:** Tailwind CSS with PostCSS/Autoprefixer
-- **UI Components:** Lucide React (icons), React QR Code
-- **Linting:** ESLint
 
-## Project Structure
-
-```
-Basketball_AI/
-├── BE/                                 # Backend (Python)
-│   ├── app.py                          # Main FastAPI application
-│   ├── calibrate.py                    # Image calibration utilities
-│   ├── metrics.py                      # Training metrics and analysis
-│   ├── player_report.py                # Player report utilities
-│   ├── requirements.txt                # Python dependencies
-│   ├── train_model.py                  # YOLO model training script
-│   ├── yolo.pt                      # your YOLO base model weights
-│   ├── basketball-detection-srfkd-1/   # Dataset folder
-│   │   ├── test/
-│   │   ├── train/
-│   │   └── valid/
-│   ├── basketball_training/            # Trained models directory
-│   │   ├── yolo26m_5classes/
-│   │   └── yolo26s_5classes/
-│   ├── metrics_reports/                # Performance reports
-│   │   ├── overfitting_analysis.png
-│   │   ├── performance_report.json
-│   │   └── training_curves.png
-│   ├── tracker/                        # Tracking configs and court images
-│   │   ├── botsort.yaml
-│   │   ├── bytetrack.yaml
-│   │   ├── court.excalidraw
-│   │   ├── half_court_y.npy
-│   │   ├── homography.npy
-│   │   ├── homography_scale.npy
-│   │   ├── minimap.png
-│   │   └── reprojection_preview.png
-│   ├── uploads/                        # User-uploaded videos (auto-created)
-│   ├── processed/                      # Processed output videos (auto-created)
-│   ├── runs/                           # Processed output videos (auto-created)
-│   └── venv/                           # Python virtual environment
-│
-├── FE/                                 # Frontend (React)
-│   ├── package.json                    # Node dependencies
-│   ├── package-lock.json               # npm lockfile
-│   ├── vite.config.js                  # Vite configuration
-│   ├── tailwind.config.js              # Tailwind CSS configuration
-│   ├── postcss.config.js               # PostCSS configuration
-│   ├── eslint.config.js                # ESLint configuration
-│   ├── index.html                      # SPA entry HTML
-│   ├── README.md                       # Frontend README
-│   ├── public/                         # Public static files
-│   └── src/
-│       ├── App.jsx                    # Main React component
-│       ├── App.css                    # Application styles
-│       ├── main.jsx                   # React entry point
-│       ├── index.css                  # Global styles
-│       └── assets/                    # Static assets
-│
-├── .gitignore                         # Ignored files
-├── install_env.bat                    # Windows environment setup script
-├── LICENSE                            # Project licensing
-├── README.md                          # Original documentation
-├── README_og.md                       # Original README backup
-└── README.es.md                       # Spanish documentation
-```
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
@@ -140,6 +93,27 @@ pip install -r requirements.txt
 ```bash
 cd FE
 npm install
+```
+
+### Running the Application
+
+#### Backend (API Server)
+
+```bash
+cd BE
+.\venv\Scripts\activate           # Activate virtual environment
+python app.py
+```
+
+The FastAPI server will start at `http://localhost:8000`
+- API documentation: `http://localhost:8000/docs` (Swagger UI)
+- Alternative docs: `http://localhost:8000/redoc` (ReDoc)
+
+#### Frontend (Development Server)
+
+```bash
+cd FE
+npm run dev
 ```
 
 ### Running the Application
@@ -205,15 +179,197 @@ The Vite development server will start at `http://localhost:5173`
 - `GET /models` - List available detection models
 - `GET /health` - System health check
 
-## Model Architecture
+## Project Structure
 
-The system uses YOLOv11 trained on basketball-specific datasets with 5 detection classes:
+```
+Basketball_AI/
+├── BE/                                 # Backend (Python)
+│   ├── app.py                          # Main FastAPI application
+│   ├── calibrate.py                    # Image calibration utilities
+│   ├── metrics.py                      # Training metrics and analysis
+│   ├── player_report.py                # Player report utilities
+│   ├── requirements.txt                # Python dependencies
+│   ├── train_model.py                  # YOLO model training script
+│   ├── yolo.pt                      # your YOLO base model weights
+│   ├── basketball-detection-srfkd-1/   # Dataset folder
+│   │   ├── test/
+│   │   ├── train/
+│   │   └── valid/
+│   ├── basketball_training/            # Trained models directory
+│   │   ├── yolo26m_5classes/
+│   │   └── yolo26s_5classes/
+│   ├── metrics_reports/                # Performance reports
+│   │   ├── overfitting_analysis.png
+│   │   ├── performance_report.json
+│   │   └── training_curves.png
+│   ├── tracker/                        # Tracking configs and court images
+│   │   ├── botsort.yaml
+│   │   ├── bytetrack.yaml
+│   │   ├── court.excalidraw
+│   │   ├── half_court_y.npy
+│   │   ├── homography.npy
+│   │   ├── homography_scale.npy
+│   │   ├── minimap.png
+│   │   └── reprojection_preview.png
+│   ├── uploads/                        # User-uploaded videos (auto-created)
+│   ├── processed/                      # Processed output videos (auto-created)
+│   ├── runs/                           # Processed output videos (auto-created)
+│   └── venv/                           # Python virtual environment
+│
+├── FE/                                 # Frontend (React)
+│   ├── package.json                    # Node dependencies
+│   ├── package-lock.json               # npm lockfile
+│   ├── vite.config.js                  # Vite configuration
+│   ├── tailwind.config.js              # Tailwind CSS configuration
+│   ├── postcss.config.js               # PostCSS configuration
+│   ├── eslint.config.js                # ESLint configuration
+│   ├── index.html                      # SPA entry HTML
+│   ├── README.md                       # Frontend README
+│   ├── public/                         # Public static files
+│   └── src/
+│       ├── App.jsx                    # Main React component
+│       ├── App.css                    # Application styles
+│       ├── main.jsx                   # React entry point
+│       ├── index.css                  # Global styles
+│       └── assets/                    # Static assets
+│
+├── .gitignore                         # Ignored files
+├── install_env.bat                    # Windows environment setup script
+├── LICENSE                            # Project licensing
+├── README.md                          # Original documentation
+├── README_og.md                       # Original README backup
+└── README.es.md                       # Spanish documentation
+```
+
+## Technology Stack
+
+### Backend
+- **Framework:** FastAPI 0.115.0 with Uvicorn
+- **Computer Vision:** YOLOv26 (via Ultralytics), OpenCV
+- **Deep Learning:** PyTorch 2.5.1 with CUDA support
+- **Data Processing:** NumPy, Pandas, scikit-learn
+- **Visualization:** Matplotlib, Seaborn
+- **Utilities:** Roboflow (dataset management), python-dotenv, PyYAML
+
+### Frontend
+- **Framework:** React 19.1.1 with Vite
+- **Styling:** Tailwind CSS with PostCSS/Autoprefixer
+- **UI Components:** Lucide React (icons), React QR Code
+- **Linting:** ESLint
+
+## Architecture
+
+### Model Architecture
+
+The system uses YOLOv26 trained on basketball-specific datasets with 5 detection classes:
 
     0 - "Ball" 
     1 - "Ball in Basket"
     2 - "Player"
     3 - "Basket"
     4 - "Player Shooting"
+
+#### Detection Classes
+
+| ID | Class | Function | Default Confidence |
+|----|-------|----------|-------------------|
+| 0 | Ball | Track basketball | 0.60 |
+| 1 | Ball in Basket | Detect successful shot | 0.25 |
+| 2 | Player | Identify all players | 0.70 |
+| 3 | Basket | Localize hoop | 0.70 |
+| 4 | Player Shooting | Identify shooter | 0.70 |
+
+### Pipeline Architecture
+
+#### Frame-by-Frame Processing
+
+```
+Video Input
+    ↓
+[Split into Frames]
+    ↓
+[YOLO Detection] → Bounding boxes + confidence scores
+    ↓
+[Tracking] → Assign stable IDs across frames
+    ↓
+[Statistics] → Calculate shots, baskets, per-player metrics
+    ↓
+[Visualization] → Draw detections, HUD, minimap, effects
+    ↓
+[Write Frame] → Encode back into video
+    ↓
+Video Output (MP4)
+```
+
+#### Core Components
+
+- **Config** - Centralized configuration management
+- **GameStats** - Accumulates shot/basket counts with per-player breakdown
+- **Visualizer** - OpenCV drawing utilities for HUD, effects, and court visualization
+- **MinimapRenderer** - Projects 2D detections onto court using homography transformation
+- **VideoProcessor** - Main pipeline: YOLO inference + output video encoding
+- **AutoCleanup** - Daemon thread for automatic cleanup of old processed files
+
+### Technical Details
+
+#### Physics & Cooldown Logic
+
+**Problem**: Single shooting motion detected in 10+ consecutive frames
+
+**Solution**: Temporal cooldown windows
+
+```python
+SHOT_COOLDOWN = 1.0     # seconds - wait after detecting a shot
+BASKET_COOLDOWN = 1.0   # seconds - wait after basket scoring
+ANIMATION_DURATION = 1  # seconds - pulse effect duration
+```
+
+**How it works:**
+1. "Player Shooting" detected → start shot cooldown timer
+2. During cooldown, ignore new shot detections
+3. "Ball in Basket" detection → basket only counts if outside basket cooldown
+4. Prevent duplicate counting across frame boundaries
+
+#### Custom Augmentation Strategy
+
+Training augmentation optimized for sports footage:
+
+```python
+AUGMENTATION = {
+    # Color & Lighting
+    'hsv_h': 0.015,      # Hue variation (color shifts)
+    'hsv_s': 0.4,        # Saturation (orange ball in any light)
+    'hsv_v': 0.2,        # Value/brightness (shadows, flares)
+    
+    # Geometry & Position
+    'degrees': 10,       # Rotation (camera angles)
+    'translate': 0.1,    # Translation (object movement)
+    'scale': 0.5,        # Scaling (depth variation)
+    'shear': 2.0,        # Shearing (perspective)
+    
+    # Advanced
+    'flipud': 0.5,       # Vertical flip
+    'fliplr': 0.5,       # Horizontal flip
+    'mosaic': 1.0,       # Mosaic augmentation
+    'mixup': 0.15        # Mixup (blend images)
+}
+```
+
+**Why**: Sports videos have high motion, varied lighting, and crowded scenes.
+
+#### Court Projection
+
+The minimap uses homography transformation to:
+1. Map 3D court coordinates to 2D video frame
+2. Project detected players onto bird's-eye court view
+3. Show real-time player positions and shot locations
+
+**Calibration Requirements:**
+- 4+ court corner points from reference image
+- Corresponding image coordinates
+- Generated transformation matrix (`homography.npy`)
+
+## Training & Performance
 
 ### Training a Custom Model
 
@@ -239,36 +395,72 @@ The training script:
 - `DEVICE` - GPU index (0 for first GPU)
 - `SEED` - Random seed for reproducibility
 
-## Pipeline Architecture
+### Model Performance
 
-### 1. Frame-by-Frame Processing
+#### Training Configuration
 
+**Hardware Used:**
+- GPU: NVIDIA GTX 1060 6GB
+- CPU: Intel i7-6700K
+- RAM: 16GB DDR4
+- Training Time: ~48 hours
+
+**Model Specifications:**
+- **Architecture**: YOLOv26s (small variant)
+- **Input Size**: 640×640 pixels
+- **Epochs**: 200
+- **Batch Size**: 8
+- **Optimizer**: AdamW with cosine decay
+- **Learning Rate**: 0.01 → 0.0005
+
+#### Performance Metrics
+
+**Overall Accuracy** (Epoch 200):
+- **mAP50**: 0.909 (Mean Average Precision at IoU ≥ 0.5)
+- **mAP50-95**: 0.623 (Average across IoU thresholds)
+- **Precision**: 0.878
+- **Recall**: 0.861
+
+**Per-Class Performance:**
+
+| Class | Precision | Recall | mAP50 | Strength |
+|-------|-----------|--------|-------|----------|
+| Ball | 0.80 | 0.88 | 0.847 | Robust detection |
+| Ball in Basket | 0.51 | 0.36 | 0.932 | Rare but distinctive |
+| Player | 0.86 | 0.85 | 0.928 | Excellent tracking |
+| Basket | 0.91 | 0.91 | 0.966 | Very reliable |
+| Player Shooting | 0.76 | 0.34 | 0.873 | Rare pose |
+
+#### Training Curves
+
+Training metrics visualizations available in `FE/public/`:
+- `results.png` - Loss curves (box, class, total)
+- `confusionMatrix.png` - Classification accuracy
+- `normalizedMatrix.png` - Normalized confusion matrix
+- `PR_curve.png` - Precision-recall tradeoff
+- `P_curve.png` - Precision vs confidence threshold
+- `R_curve.png` - Recall vs confidence threshold
+- `F1_curve.png` - F1-score optimization curve
+
+### Improving Model Performance
+
+For better accuracy with better hardware:
+
+```python
+# In train_model.py Config class:
+EPOCHS = 300              # Longer training
+BATCH_SIZE = 16           # Larger batches (RTX 3080+)
+BASE_MODEL = "yolo26m.pt" # Larger model (medium)
+# or
+BASE_MODEL = "yolo26l.pt" # Large model (24GB+ VRAM)
 ```
-Video Input
-    ↓
-[Split into Frames]
-    ↓
-[YOLO Detection] → Bounding boxes + confidence scores
-    ↓
-[Tracking] → Assign stable IDs across frames
-    ↓
-[Statistics] → Calculate shots, baskets, per-player metrics
-    ↓
-[Visualization] → Draw detections, HUD, minimap, effects
-    ↓
-[Write Frame] → Encode back into video
-    ↓
-Video Output (MP4)
-```
 
-### 2. Core Components
-
-- **Config** - Centralized configuration management
-- **GameStats** - Accumulates shot/basket counts with per-player breakdown
-- **Visualizer** - OpenCV drawing utilities for HUD, effects, and court visualization
-- **MinimapRenderer** - Projects 2D detections onto court using homography transformation
-- **VideoProcessor** - Main pipeline: YOLO inference + output video encoding
-- **AutoCleanup** - Daemon thread for automatic cleanup of old processed files
+**Advanced Techniques:**
+- Extended training (300+ epochs)
+- Larger model variants (YOLOv26m, YOLOv26l)
+- Additional data augmentation
+- Fine-tuning on specific courts
+- Ensemble methods
 
 ## Configuration
 
@@ -281,14 +473,59 @@ class Config:
     PROCESSED_DIR = Path(__file__).parent / "processed"
     MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26s_5classes" / "weights" / "best.pt"
     
+    # Video constraints
+    MAX_DURATION_SECONDS = 180   # 3 minutes max
+    TEST_MODE_DURATION = 15      # Test mode length
+    
     # Processing settings
     CONFIDENCE_THRESHOLD = 0.5        # YOLO confidence threshold
     IOU_THRESHOLD = 0.45              # NMS IoU threshold
     MAX_DETECTIONS = 100              # Maximum detections per frame
     
-    # File management
-    RETENTION_SECONDS = 3600          # Keep processed files for 1 hour
-    CLEANUP_INTERVAL = 60             # Check for cleanup every 60 seconds
+    # File retention (auto-cleanup)
+    RETENTION_SECONDS = 600      # 10 minutes
+    CLEANUP_INTERVAL = 60        # Check every 60s
+    
+    # Physics (in seconds)
+    SHOT_COOLDOWN = 1.0          # Shot detection debounce
+    BASKET_COOLDOWN = 1.0        # Basket detection debounce
+    ANIMATION_DURATION = 1       # Pulse effect length
+    
+    # Detection thresholds (0.0-1.0)
+    THRESHOLDS = {
+        0: 0.60,   # Ball
+        1: 0.25,   # Ball in Basket
+        2: 0.70,   # Player
+        3: 0.70,   # Basket
+        4: 0.70    # Player Shooting
+    }
+    
+    # Court dimensions (cm)
+    COURT_WIDTH_CM = 1500        # FIBA half-court width
+    COURT_HEIGHT_CM = 1400       # FIBA half-court depth
+```
+
+### Adjusting for Different Scenarios
+
+**Dim Lighting:**
+```python
+THRESHOLDS = {
+    0: 0.50,   # Lower ball threshold
+    1: 0.20,   # Lower basket threshold
+    2: 0.65,   # Slightly lower player
+    3: 0.65,
+    4: 0.65
+}
+```
+
+**Crowded Indoor Court:**
+```python
+SHOT_COOLDOWN = 0.8      # Faster shot detection
+BASKET_COOLDOWN = 1.2    # Slower basket debounce
+THRESHOLDS = {
+    2: 0.75,   # Higher player threshold
+    4: 0.75    # Stricter shooting pose
+}
 ```
 
 ## Performance Optimization
@@ -311,6 +548,39 @@ Choose the appropriate model size based on your hardware:
 - `yolo26m.pt` - Medium (slower, more accurate)
 
 Adjust `MODEL_PATH` in Config to switch models.
+
+## Development
+
+### Backend Development
+
+```bash
+cd BE
+.\venv\Scripts\activate
+python app.py --reload  # Auto-reload on file changes (if using Uvicorn directly)
+```
+
+### Frontend Development
+
+```bash
+cd FE
+npm run dev
+npm run lint  # Run ESLint
+npm run build # Build for production
+```
+
+### Testing & Validation
+
+**Linting:**
+```bash
+cd FE
+npm run lint
+```
+
+**Building for Production:**
+```bash
+cd FE
+npm run build
+```
 
 ## Troubleshooting
 
@@ -361,54 +631,6 @@ Check CORS configuration in app.py
 Ensure frontend is on http://localhost:5173
 ```
 
-## Development
-
-### Backend Development
-
-```bash
-cd BE
-.\venv\Scripts\activate
-python app.py --reload  # Auto-reload on file changes (if using Uvicorn directly)
-```
-
-### Frontend Development
-
-```bash
-cd FE
-npm run dev
-npm run lint  # Run ESLint
-npm run build # Build for production
-```
-
-### Testing & Validation
-
-**Linting:**
-```bash
-cd FE
-npm run lint
-```
-
-**Building for Production:**
-```bash
-cd FE
-npm run build
-```
-
-## CORS Configuration
-
-The FastAPI backend is configured to accept requests from the React frontend:
-
-```python
-CORSMiddleware(
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-Modify `app.py` if running on different ports.
-
 ## Output Files
 
 ### Processed Video
@@ -434,6 +656,21 @@ Modify `app.py` if running on different ports.
 - Shot trajectory analysis
 - Web-based model retraining interface
 
+## CORS Configuration
+
+The FastAPI backend is configured to accept requests from the React frontend:
+
+```python
+CORSMiddleware(
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+Modify `app.py` if running on different ports.
+
 ## License
 
 This project is released under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
@@ -455,6 +692,6 @@ This project integrates **Ultralytics YOLO**, which is licensed under AGPL-3.0. 
 
 ---
 
-**Last Updated:** 2026-05-19  
+**Last Updated:** 2026-05-26  
 **Version:** 1.0  
 **Status:** Active Development
