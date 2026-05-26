@@ -422,7 +422,3 @@ zict==3.0.0
 zipp==3.23.0
 zope.interface==8.0.1
 zstandard==0.24.0
-
-
-git config --global user.email "gmd020104@gmail.com"
-git config --global user.name "DiegoGMD"
