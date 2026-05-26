@@ -46,13 +46,7 @@ class Config:
 
     # TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml" # Faster but in theory better with objects going in and out camera
     TRACKER_PATH = Path(__file__).parent / "tracker" / "botsort.yaml" # Keeps better the classes if always visible
-<<<<<<< HEAD:BE/app_sam3.py
     SAM_PATH = Path(__file__).parent / "sam_models" / "sam3_1.pt"
-=======
-
-    SAM_VERSION = "3"
-    SAM_PATH = Path(__file__).parent / "sam_models" / "sam3.pt"
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72:BE/app_sam.py
 
     MINIMAP_PATH = Path(__file__).parent / "tracker" / "minimap.png"
     HOMOGRAPHY_PATH = Path(__file__).parent / "tracker" / "homography.npy"
@@ -209,29 +203,13 @@ def load_model():
 yolo_model = load_model()
 
 def load_sam():
-<<<<<<< HEAD:BE/app_sam3.py
     print("🔄 Loading SAM Model...")
     if not Config.SAM_PATH.exists():
         raise FileNotFoundError(f"❌ SAM not found at {Config.SAM_PATH}")
     overrides = dict(conf=0.25, task="segment", mode="predict",
                      model=str(Config.SAM_PATH), half=True, save=False)
-=======
-    """Loads the SAM model with error handling."""
-    overrides = dict(
-        conf=0.25,
-        task="segment",
-        mode="predict",
-        model=str(Config.SAM_PATH),
-        half=True,
-        save=False
-    )
-    
-    print(f"🔄 Loading SAM Model...")
-    if not Config.SAM_PATH.exists():
-        raise FileNotFoundError(f"❌ SAM not found at {Config.SAM_PATH}")
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72:BE/app_sam.py
     predictor = SAM3SemanticPredictor(overrides=overrides)
-    print(f"✅ SAM loaded!")
+    print("✅ SAM loaded successfully!")
     return predictor
 
 sam_predictor = load_sam()
@@ -749,7 +727,6 @@ class MinimapRenderer:
 
         return mm
 
-<<<<<<< HEAD:BE/app_sam3.py
 class SamIDCorrector:
     """
     Corrects BotSORT ID swaps using SAM3 mask-to-mask IoU matching.
@@ -874,35 +851,6 @@ class SamIDCorrector:
                 swap_map[tid] = best_tid
                 used_stored.add(best_tid)
                 used_current.add(tid)
-=======
-class SamTracker:
-    """Wraps SAM3SemanticPredictor for per-frame segmentation prompted by YOLO boxes."""
-    def __init__(self, predictor):
-        self.predictor = predictor
-
-    def reset(self, video_path: str):
-        pass  # No state to reset for semantic predictor
-
-    def add_boxes(self, frame_idx: int, boxes_xyxy: np.ndarray) -> dict:
-        return {}  # Boxes are passed directly at propagate time
-
-    def propagate(self, frame_idx: int, frame: np.ndarray = None, yolo_boxes: list = None) -> dict:
-        if frame is None or len(yolo_boxes) == 0:
-            return {}
-
-        results = self.predictor(frame, bboxes=yolo_boxes, verbose=False)
-        if not results or results[0].masks is None:
-            return {}
-
-        out = {}
-        for i, mask_data in enumerate(results[0].masks.data):
-            m = mask_data.cpu().numpy() > 0.0
-            if not m.any():
-                continue
-            ys, xs = np.where(m)
-            out[i + 1] = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
-        return out
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72:BE/app_sam.py
 
         if swap_map:
             corrected_ids = [swap_map.get(tid, tid) for tid in track_ids]
@@ -916,74 +864,8 @@ class SamTracker:
                 for tid, mask in current_masks.items()
             }
 
-<<<<<<< HEAD:BE/app_sam3.py
         self._stored_masks.update(current_masks)
         return current_masks
-=======
-    def __iter__(self):
-        import types
-        for i in range(len(self)):
-            yield types.SimpleNamespace(
-                xyxy  = self.xyxy[i:i+1],
-                xywh  = self.xywh[i:i+1],
-                cls   = self.cls[i:i+1],
-                conf  = self.conf[i:i+1],
-                id    = self.id[i:i+1] if self.id is not None else None,
-            )
-
-    def _to_xywh(self):
-        import torch
-        if len(self.xyxy) == 0: return torch.zeros((0,4))
-        x1,y1,x2,y2 = self.xyxy[:,0],self.xyxy[:,1],self.xyxy[:,2],self.xyxy[:,3]
-        return torch.stack([(x1+x2)/2,(y1+y2)/2,x2-x1,y2-y1],dim=1)
-
-    def __len__(self): return len(self.xyxy)
-
-class _FakeResult:
-    def __init__(self, boxes): self.boxes = boxes
-
-def _build_fake_results(yolo_results, sam_boxes: dict):
-    """
-    Merges YOLO class detections with SAM track IDs.
-    Strategy: for each YOLO box, find the SAM track whose box has highest IoU.
-    Event classes (1=ball-in-basket, 3=basket) keep YOLO IDs; 
-    players/ball get SAM IDs.
-    """
-    if not yolo_results or yolo_results[0].boxes is None:
-        return [_FakeResult(_FakeBoxes([],[],[],[]))]
-
-    yboxes = yolo_results[0].boxes.xyxy.cpu().numpy()
-    yclses = yolo_results[0].boxes.cls.int().cpu().tolist()
-    yconfs = yolo_results[0].boxes.conf.cpu().tolist()
-
-    out_boxes, out_cls, out_conf, out_ids = [], [], [], []
-    sam_items = list(sam_boxes.items())  # [(tid, (x1,y1,x2,y2))]
-
-    for box, cls, conf in zip(yboxes, yclses, yconfs):
-        out_boxes.append(box)
-        out_cls.append(cls)
-        out_conf.append(conf)
-
-        if cls in (1, 3):   # event-only classes, no SAM ID needed
-            out_ids.append(-1)
-            continue
-
-        # Match to best SAM track by IoU
-        best_tid, best_iou = -1, 0.0
-        x1,y1,x2,y2 = box
-        for tid, (sx1,sy1,sx2,sy2) in sam_items:
-            ix1,iy1 = max(x1,sx1), max(y1,sy1)
-            ix2,iy2 = min(x2,sx2), min(y2,sy2)
-            inter = max(0,ix2-ix1)*max(0,iy2-iy1)
-            if inter == 0: continue
-            union = (x2-x1)*(y2-y1)+(sx2-sx1)*(sy2-sy1)-inter
-            iou = inter/union
-            if iou > best_iou:
-                best_iou, best_tid = iou, tid
-        out_ids.append(best_tid if best_iou > 0.2 else -1)
-
-    return [_FakeResult(_FakeBoxes(out_boxes, out_cls, out_conf, out_ids))]
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72:BE/app_sam.py
 
 class VideoProcessor:
     """Manages the video processing loop."""
@@ -1079,28 +961,7 @@ class VideoProcessor:
                     conf=0.25, tracker=Config.TRACKER_PATH, imgsz=640, iou=0.4
                 )
 
-<<<<<<< HEAD:BE/app_sam3.py
                 sam_masks = self.sam_corrector.correct(frame, results)
-=======
-                # --- Every frame: YOLO detect (events) + SAM track (IDs) ---
-                yolo_results = yolo_model.predict(frame, conf=0.25, imgsz=640, verbose=False)
-
-                yolo_boxes_for_sam = []
-                if yolo_results and yolo_results[0].boxes is not None:
-                    for box, cls in zip(yolo_results[0].boxes.xyxy.cpu().numpy(),
-                                        yolo_results[0].boxes.cls.int().cpu().tolist()):
-                        if cls in (0, 2, 4):  # Ball, Player, Shooting
-                            yolo_boxes_for_sam.append(box)
-
-                sam_boxes = self.sam_tracker.propagate(
-                    frame_idx,
-                    frame=frame,
-                    yolo_boxes=np.array(yolo_boxes_for_sam) if yolo_boxes_for_sam else []
-                )
-
-                # Build a merged result object the rest of the code can consume
-                results = _build_fake_results(yolo_results, sam_boxes)
->>>>>>> 5b35219d898eff8fb23f1c3332041555d37ece72:BE/app_sam.py
 
                 # Guard: tracker can return [None] on the first frame
                 if not results or results[0] is None:
