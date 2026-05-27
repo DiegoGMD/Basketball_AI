@@ -34,6 +34,7 @@ import json     # Added to parse custom thresholds
 import csv      # Added to make the resulting csv for the training session
 import zipfile  # Added to give the video and the report csv in one file
 import io
+from ultralytics.models.sam import SAM3SemanticPredictor
 
 # ==================== CONFIGURATION ====================
 class Config:
@@ -41,10 +42,11 @@ class Config:
     # Paths
     UPLOAD_DIR = Path(__file__).parent / "uploads"
     PROCESSED_DIR = Path(__file__).parent / "processed"
-    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26m_5classes_2" / "weights" / "best.pt"
+    MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26m_5classes" / "weights" / "best.pt"
 
     # TRACKER_PATH = Path(__file__).parent / "tracker" / "bytetrack.yaml" # Faster but in theory better with objects going in and out camera
     TRACKER_PATH = Path(__file__).parent / "tracker" / "botsort.yaml" # Keeps better the classes if always visible
+    SAM_PATH = Path(__file__).parent / "sam_models" / "sam3_1.pt"
 
     MINIMAP_PATH = Path(__file__).parent / "tracker" / "minimap.png"
     HOMOGRAPHY_PATH = Path(__file__).parent / "tracker" / "homography.npy"
@@ -75,7 +77,7 @@ class Config:
         1: 0.25,    # Ball in Basket
         2: 0.7,     # Player
         3: 0.7,     # Basket
-        4: 0.7      # Player Shooting
+        4: 0.4      # Player Shooting
     }
 
     # Colors (BGR Format for OpenCV)
@@ -199,6 +201,18 @@ def load_model():
     return model
 
 yolo_model = load_model()
+
+def load_sam():
+    print("🔄 Loading SAM Model...")
+    if not Config.SAM_PATH.exists():
+        raise FileNotFoundError(f"❌ SAM not found at {Config.SAM_PATH}")
+    overrides = dict(conf=0.25, task="segment", mode="predict",
+                     model=str(Config.SAM_PATH), half=True, save=False)
+    predictor = SAM3SemanticPredictor(overrides=overrides)
+    print("✅ SAM loaded successfully!")
+    return predictor
+
+sam_predictor = load_sam()
 
 # ==================== CLEANUP SERVICE ====================
 class AutoCleanup:
@@ -454,6 +468,57 @@ class Visualizer:
         fill_w = int((stats.accuracy / 100) * bar_w)
         if fill_w > 0:
             cv2.rectangle(frame, (bar_x, bar_y), (bar_x + fill_w, bar_y + 8), (0, 200, 255), -1)
+
+    # Creates the final screen with a summary of all statistics including per-player breakdown.
+    @staticmethod
+    def draw_final_screen(w, h, stats, total_frames, fps):
+        canvas = np.zeros((h, w, 3), dtype=np.uint8)
+        for i in range(h): canvas[i, :] = [(20 + i/h*20)]*3
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        cv2.putText(canvas, "PERFORMANCE SUMMARY", (w//2 - 250, h//4), font, 1.5, (255,255,255), 3)
+
+        # Global stats
+        data = [
+            ("Total Shots",  str(stats.shots_attempted)),
+            ("Baskets Made", str(stats.baskets_made)),
+            ("Missed Shots", str(stats.shots_attempted - stats.baskets_made)),
+            ("Accuracy",     f"{stats.accuracy:.0f}%" if stats.accuracy == 100 else f"{stats.accuracy:.2f}%"),
+            ("Duration",     f"{int(total_frames/fps)} sec")
+        ]
+        start_y = h//3
+        for i, (label, val) in enumerate(data):
+            y_pos = start_y + (i * 55)
+            cv2.putText(canvas, label, (w//2 - 200, y_pos), font, 0.9, (200,200,200), 2)
+            cv2.putText(canvas, val, (w//2 + 80, y_pos), font, 0.9,
+                        (0,255,100) if "%" in val else (255,255,255), 2)
+            cv2.line(canvas, (w//2 - 200, y_pos + 15), (w//2 + 200, y_pos + 15), (50,50,50), 1)
+
+        # Per-player breakdown (right side of the summary screen)
+        if stats.player_stats:
+            px_col = 60
+            py_start = h//4 + 10
+            cv2.putText(canvas, "PLAYER BREAKDOWN", (px_col, py_start), font, 0.8, (180,180,50), 2)
+            cv2.line(canvas, (px_col, py_start + 10), (px_col + 300, py_start + 10), (80,80,80), 1)
+
+            headers_y = py_start + 35
+            cv2.putText(canvas, "ID",    (px_col,       headers_y), font, 0.5, (140,140,140), 1)
+            cv2.putText(canvas, "SHOTS", (px_col + 60,  headers_y), font, 0.5, (140,140,140), 1)
+            cv2.putText(canvas, "MADE",  (px_col + 140, headers_y), font, 0.5, (140,140,140), 1)
+            cv2.putText(canvas, "ACC%",  (px_col + 220, headers_y), font, 0.5, (140,140,140), 1)
+
+            sorted_players = sorted(stats.player_stats.items(),
+                                    key=lambda kv: kv[1].shots_attempted, reverse=True)
+            for row_i, (pid, ps) in enumerate(sorted_players):
+                ry = headers_y + 30 + row_i * 32
+                if ry > h - 30: break
+                cv2.putText(canvas, f"#{pid}",             (px_col,       ry), font, 0.6, (255,255,255), 1)
+                cv2.putText(canvas, str(ps.shots_attempted),(px_col + 60,  ry), font, 0.6, (200,200,200), 1)
+                cv2.putText(canvas, str(ps.baskets_made),  (px_col + 140, ry), font, 0.6, (0,255,100),   1)
+                acc_color = (0,255,100) if ps.accuracy >= 50 else (0,140,255)
+                cv2.putText(canvas, f"{ps.accuracy:.0f}%", (px_col + 220, ry), font, 0.6, acc_color, 1)
+
+        return canvas
     
 # ==================== MINIMAP RENDERER ====================
 class MinimapRenderer:
@@ -665,6 +730,147 @@ class MinimapRenderer:
 
         return mm
 
+class SamIDCorrector:
+    """
+    Corrects BotSORT ID swaps using SAM3 mask-to-mask IoU matching.
+
+    Only activates on frames where BotSORT is likely to fail:
+      - Two player boxes overlap heavily  → crossing
+      - A player is detected as shooting  → mid-jump shape change
+
+    On clean frames it just updates the stored reference masks so the
+    next correction frame has a fresh, reliable template to match against.
+    """
+
+    CROSSING_BOX_IOU  = 0.25   # box IoU above this → treat as crossing frame
+    MASK_MATCH_THRESH = 0.40   # mask IoU above this → same player, correct the ID
+
+    def __init__(self, predictor):
+        self.predictor = predictor
+        self._stored_masks: dict[int, np.ndarray] = {}   # track_id → binary mask
+
+    # ── helpers ────────────────────────────────────────────────────────────────
+
+    def _crossing_detected(self, boxes_xyxy, classes) -> bool:
+        player_boxes = [b for b, c in zip(boxes_xyxy, classes) if c in (2, 4)]
+        for i in range(len(player_boxes)):
+            for j in range(i + 1, len(player_boxes)):
+                x1,y1,x2,y2 = player_boxes[i]
+                px1,py1,px2,py2 = player_boxes[j]
+                ix1,iy1 = max(x1,px1), max(y1,py1)
+                ix2,iy2 = min(x2,px2), min(y2,py2)
+                inter = max(0,ix2-ix1) * max(0,iy2-iy1)
+                if inter == 0: continue
+                union = (x2-x1)*(y2-y1) + (px2-px1)*(py2-py1) - inter
+                if union > 0 and inter/union > self.CROSSING_BOX_IOU:
+                    return True
+        return False
+
+    @staticmethod
+    def _mask_iou(m1: np.ndarray, m2: np.ndarray) -> float:
+        if m1.shape != m2.shape:
+            m2 = cv2.resize(m2.astype(np.uint8),
+                            (m1.shape[1], m1.shape[0])).astype(bool)
+        inter = np.logical_and(m1, m2).sum()
+        union = np.logical_or(m1, m2).sum()
+        return float(inter / union) if union > 0 else 0.0
+
+    # ── main entry point ───────────────────────────────────────────────────────
+
+    def correct(self, frame: np.ndarray, results) -> dict[int, np.ndarray]:
+        """
+        Run SAM3 on the current frame and optionally correct BotSORT IDs.
+        Returns {track_id: mask} for the current frame (used for visualisation).
+        Modifies results[0].boxes.id in-place when a correction is made.
+        """
+        import torch
+
+        if not results or results[0] is None:
+            return {}
+        boxes_data = results[0].boxes
+        if boxes_data is None or boxes_data.id is None or len(boxes_data) == 0:
+            return {}
+
+        boxes_xyxy = boxes_data.xyxy.cpu().numpy()
+        classes    = boxes_data.cls.int().cpu().tolist()
+        track_ids  = boxes_data.id.int().cpu().tolist()
+
+        needs_correction = (
+            4 in classes or                                    # shooting detected
+            self._crossing_detected(boxes_xyxy, classes)      # players crossing
+        )
+
+        # Collect player + ball boxes as SAM prompts
+        prompt_boxes, prompt_ids = [], []
+        for box, cls, tid in zip(boxes_xyxy, classes, track_ids):
+            if cls in (0, 2, 4):
+                prompt_boxes.append(box)
+                prompt_ids.append(tid)
+
+        if not prompt_boxes:
+            return {}
+
+        # Run SAM3
+        try:
+            sam_res = self.predictor(
+                source=frame,
+                bboxes=np.array(prompt_boxes).tolist(),
+                verbose=False
+            )
+        except Exception as e:
+            print(f"⚠️ SAM3 error: {e}")
+            return {}
+
+        if not sam_res or sam_res[0].masks is None:
+            return {}
+
+        # Build current mask dict
+        current_masks: dict[int, np.ndarray] = {}
+        for tid, mask_t in zip(prompt_ids, sam_res[0].masks.data):
+            current_masks[tid] = mask_t.cpu().numpy() > 0.0
+
+        # Clean frame → just refresh stored masks, no correction needed
+        if not needs_correction:
+            self._stored_masks.update(current_masks)
+            return current_masks
+
+        swap_map: dict[int, int] = {}
+        used_stored:  set[int] = set()
+        used_current: set[int] = set()
+
+        for tid, cls in zip(track_ids, classes):
+            if cls not in (2, 4) or tid not in current_masks or tid in used_current:
+                continue
+            curr_mask = current_masks[tid]
+            best_tid, best_iou = None, 0.0
+            for stored_tid, stored_mask in self._stored_masks.items():
+                if stored_tid in used_stored:
+                    continue
+                iou = self._mask_iou(curr_mask, stored_mask)
+                if iou > best_iou:
+                    best_iou, best_tid = iou, stored_tid
+            if best_tid is not None and best_iou >= self.MASK_MATCH_THRESH and best_tid != tid:
+                print(f"🔧 SAM corrected #{tid} → #{best_tid}  (mask IoU {best_iou:.2f})")
+                swap_map[tid] = best_tid
+                used_stored.add(best_tid)
+                used_current.add(tid)
+                used_current.add(best_tid)
+
+        if swap_map:
+            corrected_ids = [swap_map.get(tid, tid) for tid in track_ids]
+            new_data = results[0].boxes.data.clone()
+            new_data[:, 4] = torch.tensor(
+                corrected_ids, dtype=torch.float32, device=new_data.device
+            )
+            results[0].boxes.data = new_data
+            current_masks = {
+                swap_map.get(tid, tid): mask
+                for tid, mask in current_masks.items()
+            }
+
+        self._stored_masks.update(current_masks)
+        return current_masks
+
 class VideoProcessor:
     """Manages the video processing loop."""
     def __init__(self, file_id, input_path, output_path, test_mode, mode: ProcessingMode, thresholds: dict = None):
@@ -677,6 +883,7 @@ class VideoProcessor:
         self.thresholds = thresholds if thresholds else Config.THRESHOLDS
         self.track_history = defaultdict(lambda: [])
         self.last_player_ids: dict = {}  # bbox_region -> stable_id
+        self.sam_corrector = SamIDCorrector(sam_predictor)
         
     def run(self):
         try:
@@ -758,6 +965,8 @@ class VideoProcessor:
                     conf=0.25, tracker=Config.TRACKER_PATH, imgsz=640, iou=0.4
                 )
 
+                sam_masks = self.sam_corrector.correct(frame, results)
+
                 # Guard: tracker can return [None] on the first frame
                 if not results or results[0] is None:
                     writer.write(np.hstack((annotated, np.zeros((FINAL_H, RIGHT_W, 3), dtype=np.uint8))))
@@ -772,7 +981,7 @@ class VideoProcessor:
                 
                 # 1. Boxes (Only in FULL_TRACKING)
                 if self.mode == ProcessingMode.FULL_TRACKING:
-                    self._draw_yolo_boxes(annotated, results)
+                    self._draw_yolo_boxes(annotated, results, sam_masks)
                     self._draw_tracking_trails(annotated, results)  # Motion trails
                 
                 # 2. Effects (In FULL_TRACKING or STATS_EFFECTS)
@@ -900,19 +1109,28 @@ class VideoProcessor:
 
             if stop_flags.get(self.file_id, False):
                 self._update_status("stopped", frame_idx, max_frames, stats)
+            else:
+                # create final screen and add it to the final video for 5 seconds
+                # summary_left = Visualizer.draw_final_screen(w, h, stats, frame_idx, fps)
+                # right_panel = np.zeros((FINAL_H, RIGHT_W, 3), dtype=np.uint8)
+                # right_panel[:] = (25, 25, 25)
+                # final_summary = np.hstack((summary_left, right_panel))
 
-            self._update_status("completed", frame_idx, max_frames, stats)
-            print(f"✅ Finished. Acc: {stats.accuracy:.2f}%")
+                # for _ in range(int(fps * 5)):
+                #     writer.write(final_summary)
+
+                self._update_status("completed", frame_idx, max_frames, stats)
+                print(f"✅ Finished. Acc: {stats.accuracy:.2f}%")
 
                 # --- CSV EXPORT ---
-            csv_path = Config.PROCESSED_DIR / f"{self.file_id}_stats.csv"
-            with open(csv_path, "w", newline="") as f:
-                writer_csv = csv.writer(f)
-                writer_csv.writerow(["player_id", "shots", "baskets", "accuracy_pct", "shot_positions"])
-                for pid, ps in sorted(stats.player_stats.items()):
-                    positions_str = "; ".join(f"({x:.2f},{y:.2f},{int(p)})" for x, y, p in ps.shot_positions)
-                    writer_csv.writerow([pid, ps.shots_attempted, ps.baskets_made, f"{ps.accuracy:.2f}", positions_str])
-            print(f"📄 CSV saved → {csv_path}")
+                csv_path = Config.PROCESSED_DIR / f"{self.file_id}_stats.csv"
+                with open(csv_path, "w", newline="") as f:
+                    writer_csv = csv.writer(f)
+                    writer_csv.writerow(["player_id", "shots", "baskets", "accuracy_pct", "shot_positions"])
+                    for pid, ps in sorted(stats.player_stats.items()):
+                        positions_str = "; ".join(f"({x:.2f},{y:.2f},{int(p)})" for x, y, p in ps.shot_positions)
+                        writer_csv.writerow([pid, ps.shots_attempted, ps.baskets_made, f"{ps.accuracy:.2f}", positions_str])
+                print(f"📄 CSV saved → {csv_path}")
 
             # close the files
             cap.release()
@@ -1024,7 +1242,7 @@ class VideoProcessor:
                 target_pos = stats.last_known_basket_pos or center
                 stats.register_basket(frame_idx, target_pos)
 
-    def _draw_yolo_boxes(self, frame, results):
+    def _draw_yolo_boxes(self, frame, results, sam_masks: dict = {}):
         """
         Draw coloured bounding boxes and labels on *frame* for all detections
         that exceed their class confidence threshold.
@@ -1097,6 +1315,12 @@ class VideoProcessor:
             else:
                 label = f"{class_name} {conf:.2f}"
 
+            # Draw SAM mask overlay if available for this track ID
+            if track_ids[i] in sam_masks:
+                color_overlay = np.zeros_like(frame)
+                color_overlay[sam_masks[track_ids[i]]] = Config.COLORS.get(cls, (255,255,255))
+                cv2.addWeighted(color_overlay, 0.35, frame, 1.0, 0, frame)
+                
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
             # Draw a filled background behind the label so it is readable on any background
@@ -1283,7 +1507,7 @@ def download_zip(file_id: str):
 
     video_path = Config.PROCESSED_DIR / f"{file_id}_processed.mp4"
     csv_path = Config.PROCESSED_DIR / f"{file_id}_stats.csv"
-    if not video_path.exists() or not csv_path.exists():
+    if not video_path.exists or not csv_path.exists():
         raise HTTPException(404, "Files not ready")
     
     buf = io.BytesIO()

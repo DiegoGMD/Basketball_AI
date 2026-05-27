@@ -52,20 +52,20 @@ class Config:
     IMG_SIZE = 640          # Input image resolution
     PATIENCE = 20           # Early stopping patience (epochs without improvement)
     SAVE_PERIOD = 5         # Save heavy checkpoints every 5 epochs
-    OPTIMIZER = 'MuSGD'
+    OPTIMIZER = 'SGD'
     
     # --- Learning Rate Strategy --- Controls learning speed dynamics: starts with a warmup, uses momentum for stability, and decays smoothly over time.
-    LR0 = 0.018            # Initial learning rate (SGD=1E-2, Adam=1E-3)
-    LRF = 0.01             # Final learning rate (lr0 * lrf)
+    LR0 = 0.025             # Initial learning rate (SGD=1E-2, Adam=1E-3)
+    LRF = 0.1              # Final learning rate (lr0 * lrf)
     MOMENTUM = 0.937
-    WEIGHT_DECAY = 0.00002
+    WEIGHT_DECAY = 0.000005
     WARMUP_EPOCHS = 5.0
     COS_LR = True           # Use Cosine LR scheduler
     
     # --- Loss Function Weights --- Heavily penalizes bounding box errors to ensure tracking precision on moving targets.
     # Adjusted to prioritize bounding box accuracy over classification
-    BOX_GAIN = 5.0          # Box loss gain
-    CLS_GAIN = 0.5          # Class loss gain
+    BOX_GAIN = 3.5          # Box loss gain
+    CLS_GAIN = 1.5          # Class loss gain
     # DFL_GAIN = 1.5        # Distribution Focal Loss gain
     
     # --- Data Augmentation (Optimized for Sports/Motion) ---
@@ -84,8 +84,8 @@ class Config:
         'flipud': 0.0,      # Vertical flip (Disabled: gravity matters)
         'fliplr': 0.5,      # Horizontal flip (Enabled: courts are symmetric)
         #advanced
-        'mosaic': 0.25,     # Mosaic (Probability)
-        'mixup': 0.0,       # Mixup (Probability) - Helps with player overlap
+        'mosaic': 0.10,     # Mosaic (Probability)
+        'mixup': 0.05,      # Mixup (Probability) - Helps with player overlap
         'copy_paste': 0.0,  # Segment copy-paste (Probability)
         'erasing': 0.0,     # Random erasing (Probability) - Simulates occlusion
         'auto_augment': 'noaug', # Use RandAugment policy (previous: 'augmix')

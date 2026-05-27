@@ -9,7 +9,7 @@ const DEFAULT_THRESHOLDS = {
   1: 0.25,    // Ball in Basket
   2: 0.7,     // Player
   3: 0.7,     // Basket
-  4: 0.7     // Player Shooting
+  4: 0.4      // Player Shooting
 };
 
 const LABELS = {
@@ -93,7 +93,7 @@ export default function App() {
     setErrorMsg('');
 
     // SSH TRICK - DELETE FOR FINAL VERSION (start)
-    const name = "/testing_video_real_1player.mp4";
+    const name = "/testing_video_real_6players.mp4";
     const response = await fetch(name);
     if (!response.ok) throw new Error("Could not read video file from server.");
     const videoBlob = await response.blob();

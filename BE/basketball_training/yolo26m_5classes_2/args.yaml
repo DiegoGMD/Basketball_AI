@@ -1,6 +1,6 @@
 task: detect
 mode: train
-model: yolo_models/b_ai_model.pt
+model: /home/diego/Basketball_AI/BE/basketball_training/yolo26m_5classes_2/weights/last.pt
 data: /home/diego/Basketball_AI/BE/basketball-detection-srfkd-1/data.yaml
 epochs: 200
 time: null
@@ -24,7 +24,7 @@ single_cls: false
 rect: false
 cos_lr: true
 close_mosaic: 15
-resume: false
+resume: /home/diego/Basketball_AI/BE/basketball_training/yolo26m_5classes_2/weights/last.pt
 amp: true
 fraction: 1.0
 profile: false

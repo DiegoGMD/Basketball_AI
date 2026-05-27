@@ -77,7 +77,7 @@ class Config:
         1: 0.25,    # Ball in Basket
         2: 0.7,     # Player
         3: 0.7,     # Basket
-        4: 0.7      # Player Shooting
+        4: 0.4      # Player Shooting
     }
 
     # Colors (BGR Format for OpenCV)
@@ -287,7 +287,7 @@ class PlayerStats:
         return (self.baskets_made / self.shots_attempted) * 100
 
     def __repr__(self):
-        return f"PlayerStats(shots={self.shots_attempted}, baskets={self.baskets_made}, acc={self.accuracy:.1f}%)"
+        return f"PlayerStats(shots={self.shots_attempted}, baskets={self.baskets_made}, acc={self.accuracy:.2f}%)"
 
 
 class GameStats:
@@ -457,7 +457,10 @@ class Visualizer:
         
         acc_x = x + 2 * col_w + 20
         cv2.putText(frame, "ACCURACY", (acc_x, y + 30), font, 0.5, (180,180,180), 1)
-        cv2.putText(frame, f"{stats.accuracy:.1f}%", (acc_x, y + 70), font, 1.0, (0, 255, 255), 2)
+        if stats.accuracy == 100:
+            cv2.putText(frame, f"{stats.accuracy:.0f}%", (acc_x, y + 70), font, 1.0, (0, 255, 255), 2)
+        else:
+            cv2.putText(frame, f"{stats.accuracy:.2f}%", (acc_x, y + 70), font, 1.0, (0, 255, 255), 2)
         
         bar_x, bar_y = acc_x, y + 80
         bar_w = col_w - 40
@@ -480,7 +483,7 @@ class Visualizer:
             ("Total Shots",  str(stats.shots_attempted)),
             ("Baskets Made", str(stats.baskets_made)),
             ("Missed Shots", str(stats.shots_attempted - stats.baskets_made)),
-            ("Accuracy",     f"{stats.accuracy:.1f}%"),
+            ("Accuracy",     f"{stats.accuracy:.0f}%" if stats.accuracy == 100 else f"{stats.accuracy:.2f}%"),
             ("Duration",     f"{int(total_frames/fps)} sec")
         ]
         start_y = h//3
@@ -811,7 +814,7 @@ class SamIDCorrector:
         try:
             sam_res = self.predictor(
                 source=frame,
-                bboxes=np.array(prompt_boxes).tolist(),
+                text=["ball", "ball in basket", "player", "basket", "player shooting"],
                 verbose=False
             )
         except Exception as e:
@@ -851,11 +854,12 @@ class SamIDCorrector:
                 swap_map[tid] = best_tid
                 used_stored.add(best_tid)
                 used_current.add(tid)
+                used_current.add(best_tid)
 
         if swap_map:
             corrected_ids = [swap_map.get(tid, tid) for tid in track_ids]
             new_data = results[0].boxes.data.clone()
-            new_data[:, -1] = torch.tensor(
+            new_data[:, 4] = torch.tensor(
                 corrected_ids, dtype=torch.float32, device=new_data.device
             )
             results[0].boxes.data = new_data
@@ -1007,7 +1011,10 @@ class VideoProcessor:
                 # ── Global totals row ──────────────────────────────────────
                 cv2.putText(stats_panel, f"Shots:    {stats.shots_attempted}", (15, 75), font, 0.6, (200, 200, 200), 1)
                 cv2.putText(stats_panel, f"Baskets:  {stats.baskets_made}",    (15, 105), font, 0.6, (0, 255, 100), 1)
-                cv2.putText(stats_panel, f"Accuracy: {stats.accuracy:.1f}%",   (15, 135), font, 0.65, (0, 255, 255), 2)
+                if stats.accuracy == 100:
+                    cv2.putText(stats_panel, f"Accuracy: {stats.accuracy:.0f}%",   (15, 135), font, 0.65, (0, 255, 255), 2)
+                else:
+                    cv2.putText(stats_panel, f"Accuracy: {stats.accuracy:.2f}%",   (15, 135), font, 0.65, (0, 255, 255), 2)
 
                 # Accuracy bar
                 bar_x, bar_y, bar_w, bar_h_px = 15, 148, RIGHT_W - 30, 8
@@ -1113,7 +1120,7 @@ class VideoProcessor:
                 #     writer.write(final_summary)
 
                 self._update_status("completed", frame_idx, max_frames, stats)
-                print(f"✅ Finished. Acc: {stats.accuracy:.1f}%")
+                print(f"✅ Finished. Acc: {stats.accuracy:.2f}%")
 
                 # --- CSV EXPORT ---
                 csv_path = Config.PROCESSED_DIR / f"{self.file_id}_stats.csv"
@@ -1121,8 +1128,8 @@ class VideoProcessor:
                     writer_csv = csv.writer(f)
                     writer_csv.writerow(["player_id", "shots", "baskets", "accuracy_pct", "shot_positions"])
                     for pid, ps in sorted(stats.player_stats.items()):
-                        positions_str = "; ".join(f"({x:.1f},{y:.1f},{int(p)})" for x, y, p in ps.shot_positions)
-                        writer_csv.writerow([pid, ps.shots_attempted, ps.baskets_made, f"{ps.accuracy:.1f}", positions_str])
+                        positions_str = "; ".join(f"({x:.2f},{y:.2f},{int(p)})" for x, y, p in ps.shot_positions)
+                        writer_csv.writerow([pid, ps.shots_attempted, ps.baskets_made, f"{ps.accuracy:.2f}", positions_str])
                 print(f"📄 CSV saved → {csv_path}")
 
             # close the files
