@@ -43,6 +43,7 @@ Basketball AI Tracker uses YOLO (You Only Look Once) neural networks to detect a
   - [Improving Model Performance](#improving-model-performance)
 - [Configuration](#configuration)
 - [Performance Optimization](#performance-optimization)
+- [Utility Scripts](#utility-scripts)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
 - [Output Files](#output-files)
@@ -77,6 +78,14 @@ This script will:
 - Install PyTorch with appropriate GPU support (or CPU if no GPU found)
 - Install all required dependencies
 - Verify the setup
+
+**Automatic CUDA Detection:**
+The script intelligently selects the correct PyTorch build:
+- CUDA 12.8+ → `cu128` (latest support)
+- CUDA 12.4-12.7 → `cu124`
+- CUDA 12.1-12.3 → `cu121`
+- CUDA 11.8 → `cu118`
+- No GPU → CPU-only PyTorch
 
 **Manual Setup (if needed):**
 
@@ -116,27 +125,6 @@ cd FE
 npm run dev
 ```
 
-### Running the Application
-
-#### Backend (API Server)
-
-```bash
-cd BE
-.\venv\Scripts\activate           # Activate virtual environment
-python app.py
-```
-
-The FastAPI server will start at `http://localhost:8000`
-- API documentation: `http://localhost:8000/docs` (Swagger UI)
-- Alternative docs: `http://localhost:8000/redoc` (ReDoc)
-
-#### Frontend (Development Server)
-
-```bash
-cd FE
-npm run dev
-```
-
 The Vite development server will start at `http://localhost:5173`
 
 ## Usage
@@ -149,23 +137,35 @@ The Vite development server will start at `http://localhost:5173`
 2. **Upload Video**
    - Select a basketball game or practice video
    - The system generates a unique file ID for tracking
+   - Video is stored in `BE/uploads/` directory
 
 3. **Configure Detection (Optional)**
    - Set custom confidence thresholds for different object classes
    - Choose tracking algorithm (ByteTrack or BoTSORT)
+   - Default thresholds are optimized for most scenarios
 
 4. **Start Processing**
    - Trigger the video processing pipeline
    - The system runs YOLO inference on all frames
    - Player and ball coordinates are tracked across frames
+   - Statistics are computed in real-time
 
 5. **Monitor Progress**
    - Poll the status endpoint for real-time progress updates
    - Live statistics update as frames are processed
+   - View per-player performance metrics
 
 6. **Download Results**
    - Download the processed video with tracking overlays and HUD
    - Download the statistics CSV report
+   - Both files are packaged in a ZIP for convenience
+
+**Processing Pipeline:**
+- Video frames are extracted and resized to 640×640
+- YOLO detects 5 classes: Ball, Ball in Basket, Player, Basket, Player Shooting
+- MinimapRenderer projects detections onto a 2D court visualization
+- HUD displays real-time statistics: shot count and basket count
+- Output video includes visual effects highlighting detections
 
 ### API Endpoints
 
@@ -369,6 +369,36 @@ The minimap uses homography transformation to:
 - Corresponding image coordinates
 - Generated transformation matrix (`homography.npy`)
 
+**Court Reference Diagram:**
+```
+                          baseline
+    [5]───[7]───────────[1]───────[2]───────────[8]───[6]
+  L  |     |             |  ─[B]─  |             |     | R
+     |     |             |         |             |     |
+  s  |     |             | ······· |             |     | s
+  i  [10]  |             ··       ··             |  [11] i
+  d  |?    |            [3]───────[4]            |    ?| d
+  e  |?     ··           ··       ··           ··     ?| e
+  l  |??      ···          ·······          ···      ??| l
+  i  |??         ···                     ···         ??| i
+  n  |???           ·········[9]·········           ???| n
+  e  |????                                         ????| e
+     |???????                                   ???????|
+     |???????????????                   ???????????????| 
+     ────────────────────────[C]────────────────────────
+```
+
+**Key Points:**
+- **[1], [2]** - Baseline corners (where shooters stand)
+- **[3], [4]** - Basket/hoop area corners
+- **[5], [6]** - Sideline baseline intersections
+- **[7], [8]** - Sideline extended baseline intersections
+- **[9]** - Center court mark
+- **[10], [11]** - Sideline extended points
+- **[B]** - Basketball position example
+- **[C]** - Court center
+- **[?]** - Area not in camera
+
 ## Training & Performance
 
 ### Training a Custom Model
@@ -400,17 +430,16 @@ The training script:
 #### Training Configuration
 
 **Hardware Used:**
-- GPU: NVIDIA GTX 1060 6GB
-- CPU: Intel i7-6700K
-- RAM: 16GB DDR4
-- Training Time: ~48 hours
+- GPU: NVIDIA RTX 3080 8GB
+- CPU: Intel i7-12700H
+- RAM: 32GB DDR4
 
 **Model Specifications:**
-- **Architecture**: YOLOv26s (small variant)
+- **Architecture**: YOLOv26m (medium variant)
 - **Input Size**: 640×640 pixels
 - **Epochs**: 200
 - **Batch Size**: 8
-- **Optimizer**: AdamW with cosine decay
+- **Optimizer**: SGD
 - **Learning Rate**: 0.01 → 0.0005
 
 #### Performance Metrics
@@ -463,6 +492,64 @@ BASE_MODEL = "yolo26l.pt" # Large model (24GB+ VRAM)
 - Ensemble methods
 
 ## Configuration
+
+### Environment Variables
+
+Create a `.env` file in the `BE/` directory if you need custom environment settings:
+
+```bash
+# BE/.env (optional)
+MODEL_DEVICE=0              # GPU device index (0 for first GPU, -1 for CPU)
+LOG_LEVEL=INFO              # Logging level
+CLEANUP_ENABLED=true        # Auto-cleanup of old files
+```
+
+The application will use defaults if `.env` is not present. See `app.py` Config class for all available settings.
+
+### Tracker Configuration
+
+Two tracking algorithms are available. Adjust in `BE/app.py`:
+
+**BoTSORT (Default - Better for stable tracking):**
+- File: `BE/tracker/botsort.yaml`
+- Better at maintaining player IDs across occlusions
+- Uses ReID (Re-Identification) model for appearance matching
+- Tunable parameters:
+  - `track_high_thresh` - Match confidence (0.30)
+  - `track_buffer` - Frames to keep lost tracks (60)
+  - `gmc_method` - Motion compensation for camera movement
+
+**ByteTrack (Alternative - Better for fast motion):**
+- File: `BE/tracker/bytetrack.yaml`
+- Faster processing, handles rapid motion well
+- Lower computational overhead
+
+Switch tracker in `app.py`:
+```python
+TRACKER_PATH = Path(__file__).parent / "tracker" / "botsort.yaml"  # or bytetrack.yaml
+```
+
+### Important Directories
+
+**Files to Keep/Backup:**
+- `BE/basketball_training/` - Trained model weights (critical)
+- `BE/tracker/` - Calibration files and tracker configs
+- `FE/` - Frontend source code
+
+**Auto-Cleanup Directories** (files older than 10 minutes are deleted):
+- `BE/uploads/` - Uploaded videos
+- `BE/processed/` - Processed output videos
+- `BE/runs/` - Training run outputs
+
+**Large Files (Not in Git):**
+- `*.pt` - Model weight files
+- `BE/basketball-detection-srfkd-1/` - Training datasets
+- `BE/processed/` - Output videos
+- `BE/uploads/` - Uploaded videos
+
+See `.gitignore` for complete list of ignored files.
+
+### Backend Configuration
 
 Edit configuration values in `BE/app.py` (Config class):
 
@@ -549,6 +636,130 @@ Choose the appropriate model size based on your hardware:
 
 Adjust `MODEL_PATH` in Config to switch models.
 
+**Switching Model Variant:**
+
+Edit `BE/app.py` line 44 and update the `MODEL_PATH`:
+
+```python
+# Current (medium model)
+MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26m_5classes_2" / "weights" / "best.pt"
+
+# To use small model (if trained)
+MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26s_5classes" / "weights" / "best.pt"
+```
+
+## Utility Scripts
+
+### 1. Court Calibration Tool (`calibrate.py`)
+
+Interactive tool to calibrate court homography transformation for your specific camera setup:
+
+```bash
+cd BE
+.\venv\Scripts\activate
+
+# Interactive wizard for custom courts
+python calibrate.py --video uploads/sample.mp4 --setup
+
+# FIBA preset calibration (automatic)
+python calibrate.py --video uploads/sample.mp4
+python calibrate.py --video uploads/sample.mp4 --frame 120
+python calibrate.py --image sample_frame.jpg
+```
+
+**Controls:**
+- **Left-click** → Place required calibration point
+- **Right-click** → Place/skip optional points
+- **U** → Undo last point
+- **R** → Reset all points
+- **S** → Save and preview
+- **P** → Preview without saving
+- **Q / ESC** → Quit
+
+**Output:** Generates `homography.npy` and `homography_scale.npy` in `BE/tracker/`
+
+### 2. Live Camera Testing (`live_test.py`)
+
+Real-time basketball detection and tracking using your webcam:
+
+```bash
+cd BE
+.\venv\Scripts\activate
+python live_test.py
+```
+
+**Features:**
+- Real-time YOLO inference on camera feed
+- Live player and ball tracking
+- Shot and basket detection
+- Performance metrics (FPS, detection count)
+- Press **Q** to quit
+
+**Configuration:**
+Edit the script to change:
+- `CAMERA_INDEX` - Webcam number (0 for default)
+- Confidence thresholds
+- Tracker algorithm (ByteTrack/BoTSORT)
+
+### 3. Metrics & Analysis (`metrics.py`)
+
+Detailed performance analysis and visualization for trained models:
+
+```bash
+cd BE
+.\venv\Scripts\activate
+python metrics.py
+```
+
+**Generates:**
+- Training history analysis
+- Per-class performance breakdown
+- Overfitting analysis
+- Confidence threshold analysis
+- Performance report JSON
+- Training curves PNG visualization
+
+**Configuration:**
+Edit to analyze different trained runs:
+```python
+RUN_NAME = "yolo26m_5classes_2"  # Change to your run
+```
+
+### 4. Player Report Generator (`player_report.py`)
+
+Generate per-player shot charts and statistics:
+
+```bash
+cd BE
+python player_report.py processed/<file_id>_stats.csv
+```
+
+**Output:**
+- Shot position visualization on court minimap
+- Per-player statistics overlay
+- PNG report with shot success/failure markers
+- CSV-compatible input (includes shot coordinates and scoring flag)
+
+### 5. Alternative Models (SAM3 Variants)
+
+Two alternative backend configurations using SAM3 (Segment Anything Model 3):
+
+**Box-based Segmentation:**
+```bash
+cd BE
+.\venv\Scripts\activate
+python app_sam3_box.py
+```
+
+**Semantic Segmentation:**
+```bash
+cd BE
+.\venv\Scripts\activate
+python app_sam3_semantic.py
+```
+
+These are experimental variants for advanced segmentation use cases. Configuration similar to main `app.py`.
+
 ## Development
 
 ### Backend Development
@@ -580,6 +791,40 @@ npm run lint
 ```bash
 cd FE
 npm run build
+```
+
+### Deployment Notes
+
+**Backend for Production:**
+
+Replace `python app.py` with a production ASGI server:
+```bash
+# Using Gunicorn with Uvicorn workers (Linux/macOS)
+gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+
+# Or use built-in reload-disabled production mode
+python app.py --host 0.0.0.0 --port 8000
+```
+
+**Frontend for Production:**
+
+```bash
+cd FE
+npm run build
+# Outputs optimized files to dist/ directory
+# Serve with: python -m http.server --directory dist 5173
+```
+
+**CORS Configuration for Different Domains:**
+
+Edit `BE/app.py` CORSMiddleware settings to allow your production frontend URL:
+```python
+CORSMiddleware(
+    allow_origins=["http://localhost:5173", "https://yourdomain.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 ```
 
 ## Troubleshooting
@@ -629,6 +874,25 @@ Decrease confidence threshold slightly
 Verify backend is running: http://localhost:8000/docs
 Check CORS configuration in app.py
 Ensure frontend is on http://localhost:5173
+```
+
+**npm install fails:**
+```
+Delete node_modules and package-lock.json: 
+  rmdir /s /q node_modules && del package-lock.json
+  npm install
+```
+
+**Vite dev server won't start:**
+```
+Check if port 5173 is already in use
+Try: npm run dev -- --host 127.0.0.1 --port 5174
+```
+
+**ESLint errors during development:**
+```
+Fix automatically: npm run lint -- --fix
+Check configuration: FE/eslint.config.js
 ```
 
 ## Output Files

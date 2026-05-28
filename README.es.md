@@ -43,8 +43,9 @@ Basketball AI Tracker usa las redes neuronales de YOLO (You Only Look Once) para
   - [Mejorando el Rendimiento del Modelo](#mejorando-el-rendimiento-del-modelo)
 - [Configuración](#configuración)
 - [Optimización de Rendimiento](#optimización-de-rendimiento)
+- [Scripts de Utilidad](#scripts-de-utilidad)
 - [Desarrollo](#desarrollo)
-- [Detección de Errores](#detección-de-errores)
+- [Solución de Problemas](#solución-de-problemas)
 - [Archivos de Salida](#archivos-de-salida)
 - [Limitaciones y Mejoras Futuras](#limitaciones-y-mejoras-futuras)
 - [Configuración CORS](#configuración-cors)
@@ -76,6 +77,14 @@ Este script:
 - Instala PyTorch con el soporte de GPU apropiado (o CPU si no encuentra GPU)
 - Instala todas las dependencias requeridas
 - Verifica la configuración
+
+**Detección Automática de CUDA:**
+El script selecciona inteligentemente la compilación correcta de PyTorch:
+- CUDA 12.8+ → `cu128` (soporte más reciente)
+- CUDA 12.4-12.7 → `cu124`
+- CUDA 12.1-12.3 → `cu121`
+- CUDA 11.8 → `cu118`
+- Sin GPU → PyTorch solo CPU
 
 **Configuración Manual (si es necesario):**
 
@@ -127,23 +136,35 @@ El servidor de desarrollo de Vite se iniciará en `http://localhost:5173`
 2. **Sube el Vídeo**
    - Selecciona un vídeo de partido o sesión de entrenamiento
    - El sistema genera un ID de archivo único para el seguimiento
+   - El vídeo se almacena en el directorio `BE/uploads/`
 
 3. **Configura la Detección (Opcional)**
    - Establece umbrales de confianza personalizados para diferentes clases de objetos
    - Elige el algoritmo de seguimiento (ByteTrack o BoTSORT)
+   - Los umbrales por defecto están optimizados para la mayoría de escenarios
 
 4. **Inicia el Procesamiento**
    - Activa la cadena de procesamiento de vídeo
    - El sistema ejecuta inferencia de YOLO en todos los fotogramas
    - Las coordenadas de los jugadores y pelotas se rastrean entre fotogramas
+   - Las estadísticas se calculan en tiempo real
 
 5. **Monitorea el Progreso**
-   - Consulta el endpoint de estado para actualizaciones de progreso en tiempo real
+   - Consulta el endpoint de estado para actualizaciones en tiempo real
    - Las estadísticas en vivo se actualizan a medida que se procesan los fotogramas
+   - Visualiza métricas de rendimiento por jugador
 
 6. **Descarga los Resultados**
    - Descarga el vídeo procesado con overlays de seguimiento y HUD
    - Descarga el informe de estadísticas en CSV
+   - Ambos archivos se empaquetan en un ZIP para mayor comodidad
+
+**Pipeline de Procesamiento:**
+- Los fotogramas del vídeo se extraen y redimensionan a 640×640
+- YOLO detecta 5 clases: Pelota, Pelota en Canasta, Jugador, Canasta, Jugador Lanzando
+- MinimapRenderer proyecta detecciones en visualización de cancha 2D
+- HUD muestra estadísticas en tiempo real: FPS, conteo de tiros, conteo de canastas
+- El vídeo de salida incluye efectos visuales destacando detecciones
 
 ### API Endpoints
 
@@ -157,67 +178,12 @@ El servidor de desarrollo de Vite se iniciará en `http://localhost:5173`
 - `GET /models` - Lista los modelos de detección disponibles
 - `GET /health` - Verificación de salud del sistema
 
-```
-Basketball_AI/
-├── BE/                                 # Backend (Python)
-│   ├── app.py                          # Principal aplicación FastAPI
-│   ├── calibrate.py                    # Programa de calibración de la imagen
-│   ├── metrics.py                      # Metricas de entrenamiento y análisis
-│   ├── player_report.py                # Programa de informe de jugador
-│   ├── requirements.txt                # Dependéncias de Python
-│   ├── train_model.py                  # Programa de entrenamiento del modelo de YOLO
-│   ├── yolo.pt                         # Pesos de tu modelo de YOLO
-│   ├── basketball-detection-srfkd-1/   # Directorio del dataset
-│   │   ├── test/
-│   │   ├── train/
-│   │   └── valid/
-│   ├── basketball_training/            # Directorio de los modelos entrenados
-│   │   └── yolo_5classes/
-│   ├── metrics_reports/                # Informes de funcionameinto
-│   │   ├── overfitting_analysis.png
-│   │   ├── performance_report.json
-│   │   └── training_curves.png
-│   ├── tracker/                        # Configuraciones del seguimiento y minimapa
-│   │   ├── botsort.yaml
-│   │   ├── bytetrack.yaml
-│   │   ├── court.excalidraw
-│   │   ├── half_court_y.npy
-│   │   ├── homography.npy
-│   │   ├── homography_scale.npy
-│   │   ├── minimap.png
-│   │   └── reprojection_preview.png
-│   ├── uploads/                        # Vídeos subidos por el usuario (auto-created)
-│   ├── processed/                      # Procesada salida de vídeo (auto-created)
-│   ├── runs/                           # Procesada salida de vídeo (auto-created)
-│   └── venv/                           # Entorno virtual de Python
-│
-├── FE/                                 # Frontend (React)
-│   ├── package.json                    # Dependencias de Node
-│   ├── package-lock.json               # npm lockfile
-│   ├── vite.config.js                  # Configuración de Vite
-│   ├── tailwind.config.js              # Configuración de Tailwind CSS
-│   ├── postcss.config.js               # Configuración de PostCSS
-│   ├── eslint.config.js                # Configuración de ESLint
-│   ├── index.html                      # SPA entrada HTML
-│   ├── README.md                       # Frontend README
-│   ├── public/                         # Public static files
-│   └── src/
-│       ├── App.jsx                    # Componente principal de React
-│       ├── App.css                    # Estilos de la aplicación
-│       ├── main.jsx                   # Punto de entrada de React
-│       ├── index.css                  # Estilos globales
-│       └── assets/                    # Recursos estáticos
-├── .gitignore                         # Archivos ignorados
-├── install_env.bat                    # Script de la instalacion del entorno para Windows
-├── LICENSE                            # Licecia del proyecto
-├── README.md                          # Documentación original
-└── README.es.md                       # Documentación en español
 ## Estructura del Proyecto
 
 ```
 Basketball_AI/
 ├── BE/                                 # Backend (Python)
-│   ├── app.py                          # Principal aplicación FastAPI
+│   ├── app.py                          # Aplicación principal de FastAPI
 │   ├── calibrate.py                    # Utilidades de calibración de imagen
 │   ├── metrics.py                      # Análisis de métricas de entrenamiento
 │   ├── player_report.py                # Utilidades de informe de jugador
@@ -251,7 +217,7 @@ Basketball_AI/
 │
 ├── FE/                                 # Frontend (React)
 │   ├── package.json                    # Dependencias de Node
-│   ├── package-lock.json               # archivo de bloqueo npm
+│   ├── package-lock.json               # Archivo de bloqueo npm
 │   ├── vite.config.js                  # Configuración de Vite
 │   ├── tailwind.config.js              # Configuración de Tailwind CSS
 │   ├── postcss.config.js               # Configuración de PostCSS
@@ -402,6 +368,35 @@ El minimap usa transformación de homografía para:
 - Coordenadas de imagen correspondientes
 - Matriz de transformación generada (`homography.npy`)
 
+**Diagrama de Referencia de Cancha:**
+```
+                          baseline
+    [5]───[7]───────────[1]───────[2]───────────[8]───[6]
+  L  |     |             |  ─[B]─  |             |     | R
+     |     |             |         |             |     |
+  s  |     |             | ······· |             |     | s
+  i  [10]  |             ··       ··             |  [11] i
+  d  |?    |            [3]───────[4]            |    ?| d
+  e  |?     ··           ··       ··           ··     ?| e
+  l  |??      ···          ·······          ···      ??| l
+  i  |??         ···                     ···         ??| i
+  n  |???           ·········[9]·········           ???| n
+  e  |????                                         ????| e
+     |???????                                   ???????|
+     |???????????????                   ???????????????| 
+     ────────────────────────[C]────────────────────────
+```
+
+**Puntos Clave:**
+- **[1], [2]** - Esquinas de línea de fondo (donde se paran los lanzadores)
+- **[3], [4]** - Esquinas del área de canasta/aro
+- **[5], [6]** - Intersecciones de línea lateral con línea de fondo
+- **[7], [8]** - Puntos extendidos de línea lateral
+- **[9]** - Marca del centro de la cancha
+- **[10], [11]** - Puntos extendidos de línea lateral
+- **[B]** - Ejemplo de posición de baloncesto
+- **[C]** - Centro de la cancha
+
 ## Entrenamiento y Rendimiento
 
 ### Entrenando un Modelo Personalizado
@@ -497,6 +492,64 @@ BASE_MODEL = "yolo26l.pt" # Modelo grande (24GB+ VRAM)
 
 ## Configuración
 
+### Variables de Entorno
+
+Crea un archivo `.env` en el directorio `BE/` si necesitas configuración de entorno personalizada:
+
+```bash
+# BE/.env (opcional)
+MODEL_DEVICE=0              # Índice de dispositivo GPU (0 para primera GPU, -1 para CPU)
+LOG_LEVEL=INFO              # Nivel de registro
+CLEANUP_ENABLED=true        # Limpieza automática de archivos antiguos
+```
+
+La aplicación utilizará valores por defecto si `.env` no está presente. Consulta la clase Config en `app.py` para todos los ajustes disponibles.
+
+### Configuración del Rastreador
+
+Dos algoritmos de rastreo están disponibles. Ajusta en `BE/app.py`:
+
+**BoTSORT (Predeterminado - Mejor para rastreo estable):**
+- Archivo: `BE/tracker/botsort.yaml`
+- Mejor para mantener IDs de jugadores a través de oclusiones
+- Usa modelo ReID (Re-Identificación) para coincidencia de apariencia
+- Parámetros ajustables:
+  - `track_high_thresh` - Confianza de coincidencia (0.30)
+  - `track_buffer` - Fotogramas para mantener pistas perdidas (60)
+  - `gmc_method` - Compensación de movimiento para movimiento de cámara
+
+**ByteTrack (Alternativa - Mejor para movimiento rápido):**
+- Archivo: `BE/tracker/bytetrack.yaml`
+- Procesamiento más rápido, maneja bien el movimiento rápido
+- Menor sobrecarga computacional
+
+Cambia el rastreador en `app.py`:
+```python
+TRACKER_PATH = Path(__file__).parent / "tracker" / "botsort.yaml"  # o bytetrack.yaml
+```
+
+### Directorios Importantes
+
+**Archivos a Mantener/Respaldar:**
+- `BE/basketball_training/` - Pesos del modelo entrenado (crítico)
+- `BE/tracker/` - Archivos de calibración y configuraciones de rastreador
+- `FE/` - Código fuente del frontend
+
+**Directorios de Limpieza Automática** (archivos más antiguos de 10 minutos se eliminan):
+- `BE/uploads/` - Vídeos subidos
+- `BE/processed/` - Vídeos de salida procesados
+- `BE/runs/` - Salidas de ejecución de entrenamiento
+
+**Archivos Grandes (No en Git):**
+- `*.pt` - Archivos de pesos del modelo
+- `BE/basketball-detection-srfkd-1/` - Conjuntos de datos de entrenamiento
+- `BE/processed/` - Vídeos de salida
+- `BE/uploads/` - Vídeos subidos
+
+Ver `.gitignore` para la lista completa de archivos ignorados.
+
+### Configuración Backend
+
 Edita los valores de configuración en `BE/app.py` (clase Config):
 
 ```python
@@ -569,6 +622,7 @@ El script `install_env.bat` detecta y configura automáticamente PyTorch para tu
 
 - **CUDA 12.8+** → PyTorch con soporte cu128
 - **CUDA 12.4-12.7** → PyTorch con soporte cu124
+- **CUDA 12.1-12.3** → PyTorch con soporte cu121
 - **CUDA 11.8+** → PyTorch con soporte cu118
 - **Sin GPU** → Versión PyTorch CPU
 
@@ -581,6 +635,130 @@ Elige el tamaño de modelo apropiado según tu hardware:
 - `yolo26m.pt` - Medio (más lento, más preciso)
 
 Ajusta `MODEL_PATH` en Config para cambiar de modelos.
+
+**Cambiar Variante de Modelo:**
+
+Edita `BE/app.py` línea 44 y actualiza `MODEL_PATH`:
+
+```python
+# Actual (modelo mediano)
+MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26m_5classes_2" / "weights" / "best.pt"
+
+# Para usar modelo pequeño (si está entrenado)
+MODEL_PATH = Path(__file__).parent / "basketball_training" / "yolo26s_5classes" / "weights" / "best.pt"
+```
+
+## Scripts de Utilidad
+
+### 1. Herramienta de Calibración de Cancha (`calibrate.py`)
+
+Herramienta interactiva para calibrar la transformación de homografía de cancha para tu configuración de cámara específica:
+
+```bash
+cd BE
+.\venv\Scripts\activate
+
+# Asistente interactivo para canchas personalizadas
+python calibrate.py --video uploads/sample.mp4 --setup
+
+# Calibración preestablecida FIBA (automática)
+python calibrate.py --video uploads/sample.mp4
+python calibrate.py --video uploads/sample.mp4 --frame 120
+python calibrate.py --image sample_frame.jpg
+```
+
+**Controles:**
+- **Clic izquierdo** → Colocar punto de calibración requerido
+- **Clic derecho** → Colocar/omitir puntos opcionales
+- **U** → Deshacer último punto
+- **R** → Restablecer todos los puntos
+- **S** → Guardar y ver previamente
+- **P** → Ver previamente sin guardar
+- **Q / ESC** → Salir
+
+**Salida:** Genera `homography.npy` y `homography_scale.npy` en `BE/tracker/`
+
+### 2. Prueba de Cámara en Vivo (`live_test.py`)
+
+Detección y seguimiento de baloncesto en tiempo real usando tu cámara web:
+
+```bash
+cd BE
+.\venv\Scripts\activate
+python live_test.py
+```
+
+**Características:**
+- Inferencia YOLO en tiempo real en feed de cámara
+- Seguimiento en vivo de jugadores y pelota
+- Detección de tiros y canastas
+- Métricas de rendimiento (FPS, conteo de detecciones)
+- Presiona **Q** para salir
+
+**Configuración:**
+Edita el script para cambiar:
+- `CAMERA_INDEX` - Número de cámara web (0 para predeterminada)
+- Umbrales de confianza
+- Algoritmo de seguimiento (ByteTrack/BoTSORT)
+
+### 3. Análisis de Métricas (`metrics.py`)
+
+Análisis detallado de rendimiento y visualización para modelos entrenados:
+
+```bash
+cd BE
+.\venv\Scripts\activate
+python metrics.py
+```
+
+**Genera:**
+- Análisis de historial de entrenamiento
+- Desglose de rendimiento por clase
+- Análisis de sobreajuste
+- Análisis de umbral de confianza
+- Informe de rendimiento JSON
+- Visualización de curvas de entrenamiento PNG
+
+**Configuración:**
+Edita para analizar diferentes ejecuciones entrenadas:
+```python
+RUN_NAME = "yolo26m_5classes_2"  # Cambia a tu ejecución
+```
+
+### 4. Generador de Informe de Jugadores (`player_report.py`)
+
+Genera gráficos de tiros y estadísticas por jugador:
+
+```bash
+cd BE
+python player_report.py processed/<file_id>_stats.csv
+```
+
+**Salida:**
+- Visualización de posición de tiros en minimapa de cancha
+- Superposición de estadísticas por jugador
+- Informe PNG con marcadores de éxito/fracaso de tiros
+- Entrada compatible con CSV (incluye coordenadas de tiros y bandera de puntuación)
+
+### 6. Modelos Alternativos (Variantes SAM3)
+
+Dos configuraciones alternativas de backend usando SAM3 (Segment Anything Model 3):
+
+**Segmentación Basada en Caja:**
+```bash
+cd BE
+.\venv\Scripts\activate
+python app_sam3_box.py
+```
+
+**Segmentación Semántica:**
+```bash
+cd BE
+.\venv\Scripts\activate
+python app_sam3_semantic.py
+```
+
+Estas son variantes experimentales para casos de uso de segmentación avanzada. Configuración similar a `app.py` principal.
 
 ## Desarrollo
 
@@ -615,7 +793,41 @@ cd FE
 npm run build
 ```
 
-## Detección de Errores
+### Notas de Implementación
+
+**Backend para Producción:**
+
+Reemplaza `python app.py` con un servidor ASGI de producción:
+```bash
+# Usando Gunicorn con trabajadores Uvicorn (Linux/macOS)
+gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+
+# O usa el modo de producción integrado sin recarga
+python app.py --host 0.0.0.0 --port 8000
+```
+
+**Frontend para Producción:**
+
+```bash
+cd FE
+npm run build
+# Genera archivos optimizados en directorio dist/
+# Servir con: python -m http.server --directory dist 5173
+```
+
+**Configuración de CORS para Diferentes Dominios:**
+
+Edita los ajustes de CORSMiddleware en `BE/app.py` para permitir tu URL frontend de producción:
+```python
+CORSMiddleware(
+    allow_origins=["http://localhost:5173", "https://tudominio.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## Solución de Problemas
 
 ### Problemas de Instalación
 
@@ -662,6 +874,25 @@ Reduce ligeramente el umbral de confianza
 Verifica que el backend se está ejecutando: http://localhost:8000/docs
 Comprueba la configuración CORS en app.py
 Asegurate de que el frontend está en http://localhost:5173
+```
+
+**npm install falla:**
+```
+Elimina node_modules y package-lock.json:
+  rmdir /s /q node_modules && del package-lock.json
+  npm install
+```
+
+**El servidor de desarrollo de Vite no inicia:**
+```
+Verifica si el puerto 5173 está en uso
+Intenta: npm run dev -- --host 127.0.0.1 --port 5174
+```
+
+**Errores de ESLint durante el desarrollo:**
+```
+Corregir automáticamente: npm run lint -- --fix
+Verificar configuración: FE/eslint.config.js
 ```
 
 ## Archivos de Salida

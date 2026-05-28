@@ -93,7 +93,7 @@ export default function App() {
     setErrorMsg('');
 
     // SSH TRICK - DELETE FOR FINAL VERSION (start)
-    const name = "/testing_video_real_6players.mp4";
+    const name = "/testing_video_real_2players.mp4";
     const response = await fetch(name);
     if (!response.ok) throw new Error("Could not read video file from server.");
     const videoBlob = await response.blob();

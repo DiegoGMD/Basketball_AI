@@ -143,21 +143,14 @@ echo --------------------------------------------------------------
 echo  [2/3] Instalando el resto de dependencias
 echo --------------------------------------------------------------
 pip install ^
-    fastapi==0.115.0 ^
-    "uvicorn[standard]==0.32.0" ^
-    python-multipart==0.0.12 ^
-    ultralytics ^
-    opencv-python==4.10.0.84 ^
-    numpy==1.26.4 ^
-    "pandas>=2.0.0" ^
-    "scikit-learn>=1.3.0" ^
-    "Pillow>=10.0.0" ^
-    "matplotlib>=3.8.0" ^
-    "seaborn>=0.13.0" ^
-    roboflow==1.1.47 ^
-    PyYAML==6.0.2 ^
-    python-dotenv==1.0.0^
-    lapx==0.5.5
+    fastapi==0.136.3 ^
+    "uvicorn==0.48.0" ^
+    ultralytics==8.4.53 ^
+    opencv-python==4.13.0.92 ^
+    numpy==2.4.6 ^
+    "pandas>=3.0.3" ^
+    "matplotlib>=3.10.9" ^
+    "seaborn>=0.13.2" ^
 
 if errorlevel 1 (
     echo [ERROR] Fallo la instalacion de dependencias.

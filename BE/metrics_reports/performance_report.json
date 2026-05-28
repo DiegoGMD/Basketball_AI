@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-05-27T13:58:31.075356",
+  "timestamp": "2026-05-28T13:21:12.221308",
   "model": "basketball_training/yolo26m_5classes_2/weights/best.pt",
-  "summary": "Training completed in 1.8 hours (62 epochs).\n        Best performance achieved at epoch 56.\n\n        Key Metrics:\n        - mAP@50: 0.9642 (mean average precision at 50% IoU)\n        - mAP@50-95: 0.8148 (mAP across all IoU thresholds)\n        - Precision: 0.9461 (accuracy of positive predictions)\n        - Recall: 0.9365 (completeness of detections)\n\n        Final Loss: 0.4271",
+  "summary": "Training completed in 4.6 hours (112 epochs).\n        Best performance achieved at epoch 100.\n\n        Key Metrics:\n        - mAP@50: 0.9642 (mean average precision at 50% IoU)\n        - mAP@50-95: 0.8232 (mAP across all IoU thresholds)\n        - Precision: 0.9461 (accuracy of positive predictions)\n        - Recall: 0.9436 (completeness of detections)\n\n        Final Loss: 0.4134",
   "strengths": [
-    "\u2705 Excellent precision: mAP@50-95 = 0.8148 indicates strong overall detection accuracy",
-    "\u2705 High recall: 0.9365 - model captures most objects in images",
+    "\u2705 Excellent precision: mAP@50-95 = 0.8232 indicates strong overall detection accuracy",
+    "\u2705 High recall: 0.9436 - model captures most objects in images",
     "\u2705 High precision: 0.9461 - low false positive rate",
-    "\u2705 Low validation loss: 0.4271 - good convergence"
+    "\u2705 Low validation loss: 0.4134 - good convergence"
   ],
   "weaknesses": [
     "No major weaknesses detected"

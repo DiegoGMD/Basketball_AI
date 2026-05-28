@@ -1,4 +1,11 @@
 """
+Crazy Idea:
+What if sas is only used for cls 0 & 3 (player and ball)
+Consistency on ball tracking that is getting dificult + consistency on player will keep the shot to the player id
+That way the ball is tracked and the error or changing player id could dissapear
+"""
+
+"""
 Basketball AI Tracker — FastAPI backend.
 
 Pipeline:

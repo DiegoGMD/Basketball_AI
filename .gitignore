@@ -61,8 +61,6 @@ BE/uploads/
 *.weights
 
 # Expermiments and errors
-BE/delete_comparison_reports/
-BE/compare_models.py
 FE/public/testing_video_real_1player.mp4
 FE/public/testing_video_real_2players.mp4
 FE/public/testing_video_real_6players.mp4
