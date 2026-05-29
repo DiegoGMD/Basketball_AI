@@ -1198,6 +1198,8 @@ class VideoProcessor:
 
 # ==================== FASTAPI APP ====================
 app = FastAPI(title="Basketball AI Tracker")
+from calibrate_api import router as calibration_router
+app.include_router(calibration_router)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
 @app.on_event("startup")

@@ -117,10 +117,10 @@ import argparse
 import sys
 import math
 from pathlib import Path
-
-import cv2
 import numpy as np
-
+import cv2
+import os
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 # ---------------------------------------------------------------------------
 #   COURT STANDARD - edit ONE block, or use --setup for the interactive wizard.

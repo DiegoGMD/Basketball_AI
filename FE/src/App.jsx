@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Play, Square, Download, Activity, CheckCircle, AlertCircle, Video, Settings, Info, RefreshCw, Github, Database, Sun, Clock, X, RotateCcw, Save, Cog, SlidersHorizontal } from 'lucide-react';
+import CalibrationModal from './CalibrationModal';
 
 const API_URL = 'http://localhost:8000'; // Change if deployed
 
@@ -37,6 +38,7 @@ export default function App() {
   
   // Advanced Settings State
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
   const [thresholds, setThresholds] = useState(DEFAULT_THRESHOLDS);
   
   const [errorMsg, setErrorMsg] = useState('');
@@ -76,13 +78,8 @@ export default function App() {
   const resetThresholds = () => {
     setThresholds(DEFAULT_THRESHOLDS);
   };
-  
-  const updateThreshold = (key, value) => {
-    setThresholds(prev => ({
-      ...prev,
-      [key]: parseFloat(value)
-    }));
-  };
+
+  const startCalibration = () => setCalibrating(true);
 
   // there are 2 steps:
   // step 1: UPLOAD --> Sends the raw file to the server. The server responds with an ID (e.g., "video-123")
@@ -418,13 +415,22 @@ export default function App() {
                         </button>
                     </div>
                   ) : (
-                    <button 
-                      onClick={uploadAndStart}
-                      disabled={status === 'error'}
-                      className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-12 py-4 text-lg rounded-xl font-bold transition-all shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
-                    >
-                      <Play size={24} /> Start Analysis
-                    </button>
+                    <div className="flex flex-wrap gap-4 justify-center">
+                      <button 
+                        onClick={uploadAndStart}
+                        disabled={status === 'error'}
+                        className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-12 py-4 text-lg rounded-xl font-bold transition-all shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
+                      >
+                        <Play size={24} /> Start Analysis
+                      </button>
+                      <button
+                        onClick={startCalibration}
+                        disabled={!file}
+                        className="flex items-center gap-2 bg-slate-600 hover:bg-slate-500 text-white px-8 py-4 text-lg rounded-xl font-bold transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
+                      >
+                        <SlidersHorizontal size={24} /> Calibrate
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -482,6 +488,14 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {calibrating && (
+        <CalibrationModal
+          file={file}
+          onClose={() => setCalibrating(false)}
+          onSaved={() => console.log("Calibration saved!")}
+        />
+      )}
 
       {/* Footer / Credits (Requested Feature) */}
       <footer className="w-full p-6 text-center text-slate-500 text-sm border-t border-slate-800 mt-12 bg-slate-900/80 backdrop-blur-sm">
